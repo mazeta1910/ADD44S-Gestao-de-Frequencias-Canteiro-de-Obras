@@ -7,6 +7,7 @@ import java.net.Socket;
 import java.util.Scanner;
 
 import br.edu.utfpr.util.JPAUtil;
+import br.edu.utfpr.util.JornadaUtil;
 
 public class TerminalCanteiroClienteTCP {
 
@@ -62,9 +63,22 @@ public class TerminalCanteiroClienteTCP {
 
                 while (true) {
                     out.println("CMD:GET_ESTADO_JORNADA");
-                    String estado = in.readLine().split(";")[1];
+                    String[] respostaEstado = in.readLine().split(";");
+                    String estado = respostaEstado[1];
 
                     System.out.println("\n--- REGISTRO DE PONTO ---");
+
+                    if (respostaEstado.length >= 8) {
+                        long minutosTrabalhados = Long.parseLong(respostaEstado[3]);
+                        long metaDiaria = Long.parseLong(respostaEstado[5]);
+                        long saldo = Long.parseLong(respostaEstado[7]);
+                        String tipoContrato = respostaEstado.length >= 10 ? respostaEstado[9] : "CLT";
+
+                        System.out.println("Contrato: " + tipoContrato
+                                + " | Meta do dia: " + JornadaUtil.formatarDuracao(metaDiaria));
+                        System.out.println("Trabalhado hoje: " + JornadaUtil.formatarDuracao(minutosTrabalhados)
+                                + " | Saldo: " + JornadaUtil.formatarSaldo(saldo));
+                    }
 
                     if (estado.equals("AGUARDANDO_ENTRADA")) {
                         System.out.println("1. Entrada");

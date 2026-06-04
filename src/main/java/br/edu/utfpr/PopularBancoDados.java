@@ -131,6 +131,17 @@ public class PopularBancoDados {
         trabalhadorService.inserir(operario2);
         System.out.println("✅ Trabalhador Operacional criado: " + operario2.getNomeCompleto());
 
+        Trabalhador estagiario1 = new Trabalhador();
+        estagiario1.setNomeCompleto("Lucas Ferreira");
+        estagiario1.setCpf("44444444444");
+        estagiario1.setFuncao("Estagiario de Engenharia");
+        estagiario1.setAdministrador(false);
+        estagiario1.setDataContratacao(LocalDate.now());
+        estagiario1.setTipoContrato("ESTAGIARIO");
+        estagiario1.setCanteiroAtual(canteiro1);
+        trabalhadorService.inserir(estagiario1);
+        System.out.println("✅ Estagiario criado (meta 6h/dia): " + estagiario1.getNomeCompleto());
+
         // --- INSERÇÃO DOS EPIs ---
 
         EPI capacete1 = new EPI();
@@ -186,7 +197,7 @@ public class PopularBancoDados {
         System.out.println("=".repeat(60));
         System.out.println("📊 Resumo:");
         System.out.println("   • 2 Canteiros");
-        System.out.println("   • 8 Trabalhadores");
+        System.out.println("   • 9 Trabalhadores (inclui 1 estagiario com meta de 6h)");
         System.out.println("   • 5 EPIs (1 vencido para teste)");
         System.out.println("=".repeat(60));
     }

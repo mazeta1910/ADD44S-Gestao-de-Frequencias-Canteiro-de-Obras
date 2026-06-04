@@ -3,6 +3,7 @@ package br.edu.utfpr.network;
 import br.edu.utfpr.model.RegistroPonto;
 import br.edu.utfpr.model.Trabalhador;
 import br.edu.utfpr.util.JPAUtil;
+import br.edu.utfpr.util.JornadaUtil;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.NoResultException;
 
@@ -11,7 +12,6 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -114,46 +114,36 @@ public class ServidorCentralTCP {
                     } else if (comando.equals("PONTO_SAIDA")) {
                         registroDiario.setHoraSaida(agora);
 
-                        long minutosTrabalhados = 0;
-                        if (registroDiario.getHoraEntrada() != null && registroDiario.getHoraSaidaIntervalo() != null) {
-                            minutosTrabalhados += Duration.between(registroDiario.getHoraEntrada(), registroDiario.getHoraSaidaIntervalo()).toMinutes();
-                        }
-                        if (registroDiario.getHoraRetornoIntervalo() != null) {
-                            minutosTrabalhados += Duration.between(registroDiario.getHoraRetornoIntervalo(), agora).toMinutes();
-                        } else if (registroDiario.getHoraEntrada() != null && registroDiario.getHoraSaidaIntervalo() == null) {
-                            minutosTrabalhados += Duration.between(registroDiario.getHoraEntrada(), agora).toMinutes();
-                        }
-
-                        long metaMinutos = 480;
-                        long saldo = minutosTrabalhados - metaMinutos;
-
+                        long saldo = JornadaUtil.calcularSaldo(registroDiario, t, agora);
                         String aviso = "";
                         if (saldo < 0) {
-                            aviso = " [AVISO: Jornada incompleta. Saldo negativo de " + Math.abs(saldo) + " minutos]";
+                            aviso = " [AVISO: Jornada incompleta. " + JornadaUtil.formatarSaldo(saldo) + "]";
                         } else if (saldo > 0) {
-                            aviso = " [Saldo positivo de " + saldo + " minutos]";
+                            aviso = " [" + JornadaUtil.formatarSaldo(saldo) + "]";
                         }
 
                         out.println("RESULTADO;Saida registrada as " + agora.format(fmt) + "." + aviso);
                     } else if (comando.equals("GET_ESTADO_JORNADA")) {
+                        String estado;
                         if (registroDiario.getHoraEntrada() == null) {
-                            out.println("ESTADO;AGUARDANDO_ENTRADA");
+                            estado = "AGUARDANDO_ENTRADA";
                         } else if (registroDiario.getHoraSaidaIntervalo() == null && registroDiario.getHoraSaida() == null) {
-                            out.println("ESTADO;EM_TRABALHO");
+                            estado = "EM_TRABALHO";
                         } else if (registroDiario.getHoraSaidaIntervalo() != null && registroDiario.getHoraRetornoIntervalo() == null) {
-                            out.println("ESTADO;EM_INTERVALO");
+                            estado = "EM_INTERVALO";
                         } else if (registroDiario.getHoraRetornoIntervalo() != null && registroDiario.getHoraSaida() == null) {
-                            out.println("ESTADO;EM_TRABALHO_POS_INTERVALO");
+                            estado = "EM_TRABALHO_POS_INTERVALO";
                         } else {
-                            out.println("ESTADO;JORNADA_FINALIZADA");
+                            estado = "JORNADA_FINALIZADA";
                         }
+                        out.println(JornadaUtil.montarRespostaEstado(estado, registroDiario, t, agora));
                     } else if (comando.equals("FICHA_FREQUENCIA")) {
                         List<RegistroPonto> ficha = em.createQuery("SELECT r FROM RegistroPonto r WHERE r.trabalhador = :t ORDER BY r.dataRegistro DESC", RegistroPonto.class)
                                 .setParameter("t", t).getResultList();
 
-                        out.println("+------------+---------+---------+---------+---------+");
-                        out.println("| DATA       | ENTRADA | INT.SAI | INT.RET | SAIDA   |");
-                        out.println("+------------+---------+---------+---------+---------+");
+                        out.println("+------------+---------+---------+---------+---------+---------+");
+                        out.println("| DATA       | ENTRADA | INT.SAI | INT.RET | SAIDA   | SALDO   |");
+                        out.println("+------------+---------+---------+---------+---------+---------+");
 
                         for (RegistroPonto r : ficha) {
                             String data = r.getDataRegistro().toString();
@@ -161,10 +151,15 @@ public class ServidorCentralTCP {
                             String is = r.getHoraSaidaIntervalo() != null ? r.getHoraSaidaIntervalo().format(fmt) : "--:--";
                             String ir = r.getHoraRetornoIntervalo() != null ? r.getHoraRetornoIntervalo().format(fmt) : "--:--";
                             String sai = r.getHoraSaida() != null ? r.getHoraSaida().format(fmt) : "--:--";
+                            String saldo = "--:--";
+                            if (r.getHoraSaida() != null) {
+                                long saldoMinutos = JornadaUtil.calcularSaldo(r, t, r.getHoraSaida());
+                                saldo = JornadaUtil.formatarSaldoCurto(saldoMinutos);
+                            }
 
-                            out.printf("| %-10s | %-7s | %-7s | %-7s | %-7s |\n", data, ent, is, ir, sai);
+                            out.printf("| %-10s | %-7s | %-7s | %-7s | %-7s | %-7s |\n", data, ent, is, ir, sai, saldo);
                         }
-                        out.println("+------------+---------+---------+---------+---------+");
+                        out.println("+------------+---------+---------+---------+---------+---------+");
                         out.println("FIM_FICHA");
                     } else if (comando.equals("SAIR")) {
                         out.println("DESCONECTADO");
