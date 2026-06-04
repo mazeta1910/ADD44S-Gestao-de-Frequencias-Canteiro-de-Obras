@@ -8,21 +8,26 @@ import java.util.Scanner;
 
 public class TerminalCanteiroClienteTCP {
 
-    private static final String IP_SERVIDOR = "127.0.0.1";
-    private static final int PORTA_SERVIDOR = 8080;
-
     public static void main(String[] args) {
+        String ipServidor = NetworkConfig.resolverIpServidor(args);
+        int portaServidor = NetworkConfig.resolverPortaServidor(args);
+        boolean servidorLocal = NetworkConfig.isServidorLocal(ipServidor);
+
         Scanner scanner = new Scanner(System.in);
 
         System.out.println("=======================================");
         System.out.println("   TERMINAL DE ACESSO - CANTEIRO");
         System.out.println("=======================================");
+        System.out.println("Conectando ao servidor: " + ipServidor + ":" + portaServidor);
+        if (!servidorLocal) {
+            System.out.println("[i] Terminal remoto: o painel de gestao (opcao 7) so funciona no PC do servidor.");
+        }
 
         System.out.print("\nDigite seu CPF: ");
         String cpf = scanner.nextLine();
 
         try (
-                Socket socket = new Socket(IP_SERVIDOR, PORTA_SERVIDOR);
+                Socket socket = new Socket(ipServidor, portaServidor);
                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))
         ) {
@@ -62,8 +67,8 @@ public class TerminalCanteiroClienteTCP {
                     System.out.println("5. Ver Ficha de Frequencia");
                     System.out.println("6. Sair");
 
-                    // Libera o menu pesado apenas se o Sockets confirmou que ele é Admin
-                    if (isAdmin) {
+                    // Painel de gestao usa o banco local; so esta disponivel no PC do servidor.
+                    if (isAdmin && servidorLocal) {
                         System.out.println("7. Abrir Painel de Gestao (Menu Completo)");
                     }
 
@@ -89,7 +94,7 @@ public class TerminalCanteiroClienteTCP {
                     } else if (opcao.equals("6")) {
                         out.println("CMD:SAIR");
                         break;
-                    } else if (opcao.equals("7") && isAdmin) {
+                    } else if (opcao.equals("7") && isAdmin && servidorLocal) {
                         opcaoValida = true;
                         System.out.println("\nIniciando modulo de gestao corporativa...");
                         br.edu.utfpr.MenuConsoleSimplificado.exibirMenu();
@@ -107,7 +112,9 @@ public class TerminalCanteiroClienteTCP {
             }
 
         } catch (Exception e) {
-            System.out.println("ERRO: Nao foi possivel conectar ao Servidor na porta " + PORTA_SERVIDOR);
+            System.out.println("ERRO: Nao foi possivel conectar ao servidor em " + ipServidor + ":" + portaServidor);
+            System.out.println("Verifique se o ServidorCentralTCP esta rodando e se o firewall libera a porta.");
+            System.out.println("Uso: java ... TerminalCanteiroClienteTCP [IP_DO_SERVIDOR] [PORTA]");
         } finally {
             scanner.close();
         }

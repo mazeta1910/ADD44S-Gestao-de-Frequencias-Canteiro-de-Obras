@@ -19,9 +19,21 @@ import java.util.List;
 
 public class ServidorCentralTCP {
 
-    public static void iniciarServidor() {
-        try (ServerSocket serverSocket = new ServerSocket(8080)) {
-            System.out.println("SERVIDOR CENTRAL ATIVO - Escutando na porta 8080...");
+    public static void iniciarServidor(int porta) {
+        try (ServerSocket serverSocket = new ServerSocket(porta)) {
+            System.out.println("SERVIDOR CENTRAL ATIVO - Escutando na porta " + porta + "...");
+            System.out.println("Terminais remotos podem conectar usando um destes IPs:");
+
+            List<String> ipsLocais = NetworkConfig.listarIpsLocais();
+            if (ipsLocais.isEmpty()) {
+                System.out.println("  - " + NetworkConfig.IP_PADRAO + " (somente neste computador)");
+            } else {
+                for (String ip : ipsLocais) {
+                    System.out.println("  - " + ip + ":" + porta);
+                }
+            }
+            System.out.println("Exemplo no outro PC: java ... TerminalCanteiroClienteTCP " +
+                    (ipsLocais.isEmpty() ? NetworkConfig.IP_PADRAO : ipsLocais.get(0)) + " " + porta);
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 new Thread(() -> processarRequisicao(clientSocket)).start();
@@ -32,11 +44,13 @@ public class ServidorCentralTCP {
     }
 
     public static void main(String[] args) {
+        int porta = NetworkConfig.resolverPortaServidor(args);
+
         System.out.println("=========================================");
         System.out.println("   SERVIDOR CENTRAL INICIADO (NODO 1)    ");
         System.out.println("   Aguardando conexoes dos canteiros...  ");
         System.out.println("=========================================");
-        iniciarServidor();
+        iniciarServidor(porta);
     }
 
     private static void processarRequisicao(Socket clientSocket) {
