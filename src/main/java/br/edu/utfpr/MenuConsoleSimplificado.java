@@ -1,6 +1,8 @@
 package br.edu.utfpr;
 
+import java.io.InputStream;
 import java.lang.management.ManagementFactory;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -26,7 +28,15 @@ import com.sun.management.OperatingSystemMXBean;
 
 public class MenuConsoleSimplificado {
 
-    private static final Scanner scanner = new Scanner(System.in);
+    private static Scanner scanner = new Scanner(System.in, StandardCharsets.UTF_8);
+
+    public static void definirEntrada(InputStream entrada) {
+        scanner = new Scanner(entrada, StandardCharsets.UTF_8);
+    }
+
+    public static void restaurarEntradaPadrao() {
+        scanner = new Scanner(System.in, StandardCharsets.UTF_8);
+    }
     private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final int CARGA_APRESENTACAO = 5_000_000;
 

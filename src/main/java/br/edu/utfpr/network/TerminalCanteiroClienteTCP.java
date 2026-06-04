@@ -1,12 +1,12 @@
 package br.edu.utfpr.network;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.Scanner;
 
-import br.edu.utfpr.util.JPAUtil;
 import br.edu.utfpr.util.JornadaUtil;
 
 public class TerminalCanteiroClienteTCP {
@@ -125,8 +125,12 @@ public class TerminalCanteiroClienteTCP {
                     } else if (opcao.equals("7") && isAdmin) {
                         opcaoValida = true;
                         System.out.println("\nIniciando modulo de gestao corporativa...");
-                        JPAUtil.configurarHostBanco(ipServidor);
-                        br.edu.utfpr.MenuConsoleSimplificado.exibirMenu();
+                        try {
+                            GestaoRemotaSession.executarNoCliente(out, in, scanner);
+                        } catch (IOException | InterruptedException e) {
+                            System.out.println("\nErro ao acessar gestao corporativa: " + e.getMessage());
+                            Thread.currentThread().interrupt();
+                        }
                         System.out.println("\nRetornando ao terminal de ponto...");
                     }
 
@@ -142,7 +146,10 @@ public class TerminalCanteiroClienteTCP {
 
         } catch (Exception e) {
             System.out.println("ERRO: Nao foi possivel conectar ao servidor em " + ipServidor + ":" + portaServidor);
-            System.out.println("Verifique se o ServidorCentralTCP esta rodando e se o firewall libera a porta.");
+            System.out.println("Verifique se o ServidorCentralTCP esta rodando e se o firewall libera a porta "
+                    + NetworkConfig.PORTA_PADRAO + ".");
+            System.out.println("No PC servidor, use um IP da rede local (nao 127.0.0.1) — ex.: "
+                    + "java ... TerminalCanteiroClienteTCP 192.168.x.x " + NetworkConfig.PORTA_PADRAO);
             System.out.println("Uso: java ... TerminalCanteiroClienteTCP [IP_DO_SERVIDOR] [PORTA]");
         } finally {
             scanner.close();

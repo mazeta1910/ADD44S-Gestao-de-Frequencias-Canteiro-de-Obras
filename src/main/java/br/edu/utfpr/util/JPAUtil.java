@@ -3,6 +3,7 @@ package br.edu.utfpr.util;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;
+import jakarta.persistence.PersistenceException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -37,7 +38,17 @@ public class JPAUtil {
                 "jakarta.persistence.jdbc.url",
                 "jdbc:postgresql://" + host + ":" + PORTA_POSTGRES + "/" + NOME_BANCO
         );
-        return Persistence.createEntityManagerFactory(PERSISTENCE_UNIT, props);
+
+        try {
+            return Persistence.createEntityManagerFactory(PERSISTENCE_UNIT, props);
+        } catch (PersistenceException e) {
+            factory = null;
+            throw new IllegalStateException(
+                    "Falha ao conectar ao PostgreSQL em " + host + ":" + PORTA_POSTGRES
+                            + "/" + NOME_BANCO + ". Verifique se o banco esta rodando.",
+                    e
+            );
+        }
     }
 
     private static EntityManagerFactory getFactory() {

@@ -34,6 +34,8 @@ public class ServidorCentralTCP {
             }
             System.out.println("Exemplo no outro PC: java ... TerminalCanteiroClienteTCP " +
                     (ipsLocais.isEmpty() ? NetworkConfig.IP_PADRAO : ipsLocais.get(0)) + " " + porta);
+            System.out.println("Gestao corporativa remota (opcao 7): executada no servidor via TCP.");
+            System.out.println("Certifique-se de que o PostgreSQL esta rodando neste PC (localhost:5432).");
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 new Thread(() -> processarRequisicao(clientSocket)).start();
@@ -81,6 +83,32 @@ public class ServidorCentralTCP {
                     em.close();
                 } else if (mensagem.startsWith("CMD:") && cpfAutenticado != null) {
                     String comando = mensagem.substring(4);
+
+                    if (comando.equals("GESTAO_INICIAR")) {
+                        EntityManager emGestao = JPAUtil.getEntityManager();
+                        try {
+                            Trabalhador admin = emGestao.createQuery(
+                                            "SELECT t FROM Trabalhador t WHERE t.cpf = :cpf", Trabalhador.class)
+                                    .setParameter("cpf", cpfAutenticado)
+                                    .getSingleResult();
+
+                            if (!admin.isAdministrador()) {
+                                out.println("GESTAO_ERRO;PERMISSAO_NEGADA");
+                            } else {
+                                out.println("GESTAO_OK");
+                                out.flush();
+                                GestaoRemotaSession.executarNoServidor(in, out);
+                                out.println("GESTAO_FIM");
+                                out.flush();
+                            }
+                        } catch (NoResultException e) {
+                            out.println("GESTAO_ERRO;CPF_INVALIDO");
+                        } finally {
+                            emGestao.close();
+                        }
+                        continue;
+                    }
+
                     EntityManager em = JPAUtil.getEntityManager();
                     em.getTransaction().begin();
 
