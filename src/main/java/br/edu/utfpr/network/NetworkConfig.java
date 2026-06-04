@@ -51,6 +51,30 @@ public final class NetworkConfig {
         return PORTA_PADRAO;
     }
 
+    public static boolean ipFoiConfiguradoExternamente(String[] args) {
+        if (args != null && args.length >= 1 && !args[0].isBlank()) {
+            return true;
+        }
+        String ipAmbiente = System.getenv("SERVIDOR_IP");
+        if (ipAmbiente != null && !ipAmbiente.isBlank()) {
+            return true;
+        }
+        String ipPropriedade = System.getProperty("servidor.ip");
+        return ipPropriedade != null && !ipPropriedade.isBlank();
+    }
+
+    public static boolean portaFoiConfiguradaExternamente(String[] args) {
+        if (args != null && args.length >= 2 && !args[1].isBlank()) {
+            return true;
+        }
+        String portaAmbiente = System.getenv("SERVIDOR_PORTA");
+        if (portaAmbiente != null && !portaAmbiente.isBlank()) {
+            return true;
+        }
+        String portaPropriedade = System.getProperty("servidor.porta");
+        return portaPropriedade != null && !portaPropriedade.isBlank();
+    }
+
     public static boolean isServidorLocal(String ipServidor) {
         if (ipServidor == null || ipServidor.isBlank()) {
             return true;

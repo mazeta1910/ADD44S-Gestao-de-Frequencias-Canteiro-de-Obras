@@ -9,16 +9,34 @@ import java.util.Scanner;
 public class TerminalCanteiroClienteTCP {
 
     public static void main(String[] args) {
-        String ipServidor = NetworkConfig.resolverIpServidor(args);
-        int portaServidor = NetworkConfig.resolverPortaServidor(args);
-        boolean servidorLocal = NetworkConfig.isServidorLocal(ipServidor);
-
         Scanner scanner = new Scanner(System.in);
 
         System.out.println("=======================================");
         System.out.println("   TERMINAL DE ACESSO - CANTEIRO");
         System.out.println("=======================================");
-        System.out.println("Conectando ao servidor: " + ipServidor + ":" + portaServidor);
+
+        String ipServidor = NetworkConfig.resolverIpServidor(args);
+        int portaServidor = NetworkConfig.resolverPortaServidor(args);
+
+        if (!NetworkConfig.ipFoiConfiguradoExternamente(args)) {
+            System.out.print("\nDigite o IP do servidor (Enter = " + NetworkConfig.IP_PADRAO + " neste PC): ");
+            String ipDigitado = scanner.nextLine().trim();
+            if (!ipDigitado.isEmpty()) {
+                ipServidor = ipDigitado;
+            }
+        }
+
+        if (!NetworkConfig.portaFoiConfiguradaExternamente(args)) {
+            System.out.print("Digite a porta do servidor (Enter = " + NetworkConfig.PORTA_PADRAO + "): ");
+            String portaDigitada = scanner.nextLine().trim();
+            if (!portaDigitada.isEmpty()) {
+                portaServidor = Integer.parseInt(portaDigitada);
+            }
+        }
+
+        boolean servidorLocal = NetworkConfig.isServidorLocal(ipServidor);
+
+        System.out.println("\nConectando ao servidor: " + ipServidor + ":" + portaServidor);
         if (!servidorLocal) {
             System.out.println("[i] Terminal remoto: o painel de gestao (opcao 7) so funciona no PC do servidor.");
         }
