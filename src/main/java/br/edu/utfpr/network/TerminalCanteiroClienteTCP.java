@@ -6,6 +6,8 @@ import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.Scanner;
 
+import br.edu.utfpr.util.JPAUtil;
+
 public class TerminalCanteiroClienteTCP {
 
     public static void main(String[] args) {
@@ -34,12 +36,7 @@ public class TerminalCanteiroClienteTCP {
             }
         }
 
-        boolean servidorLocal = NetworkConfig.isServidorLocal(ipServidor);
-
         System.out.println("\nConectando ao servidor: " + ipServidor + ":" + portaServidor);
-        if (!servidorLocal) {
-            System.out.println("[i] Terminal remoto: o painel de gestao (opcao 7) so funciona no PC do servidor.");
-        }
 
         System.out.print("\nDigite seu CPF: ");
         String cpf = scanner.nextLine();
@@ -85,8 +82,7 @@ public class TerminalCanteiroClienteTCP {
                     System.out.println("5. Ver Ficha de Frequencia");
                     System.out.println("6. Sair");
 
-                    // Painel de gestao usa o banco local; so esta disponivel no PC do servidor.
-                    if (isAdmin && servidorLocal) {
+                    if (isAdmin) {
                         System.out.println("7. Abrir Painel de Gestao (Menu Completo)");
                     }
 
@@ -112,9 +108,10 @@ public class TerminalCanteiroClienteTCP {
                     } else if (opcao.equals("6")) {
                         out.println("CMD:SAIR");
                         break;
-                    } else if (opcao.equals("7") && isAdmin && servidorLocal) {
+                    } else if (opcao.equals("7") && isAdmin) {
                         opcaoValida = true;
                         System.out.println("\nIniciando modulo de gestao corporativa...");
+                        JPAUtil.configurarHostBanco(ipServidor);
                         br.edu.utfpr.MenuConsoleSimplificado.exibirMenu();
                         System.out.println("\nRetornando ao terminal de ponto...");
                     }
