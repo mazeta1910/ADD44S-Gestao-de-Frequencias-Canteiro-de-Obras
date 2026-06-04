@@ -4,9 +4,28 @@ import br.edu.utfpr.model.*;
 import br.edu.utfpr.service.*;
 import br.edu.utfpr.util.JPAUtil;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityTransaction;
 import java.time.LocalDate;
 
 public class PopularBancoDados {
+
+    private static void limparDadosExistentes(EntityManager em) {
+        EntityTransaction tx = em.getTransaction();
+        try {
+            tx.begin();
+            em.createQuery("DELETE FROM RegistroPonto").executeUpdate();
+            em.createQuery("DELETE FROM EPI").executeUpdate();
+            em.createQuery("DELETE FROM Trabalhador").executeUpdate();
+            em.createQuery("DELETE FROM Canteiro").executeUpdate();
+            tx.commit();
+            System.out.println("Dados anteriores removidos.\n");
+        } catch (Exception e) {
+            if (tx.isActive()) {
+                tx.rollback();
+            }
+            throw new RuntimeException("Erro ao limpar dados existentes: " + e.getMessage(), e);
+        }
+    }
 
     public static void main(String[] args) {
         EntityManager em = JPAUtil.getEntityManager();
@@ -16,6 +35,7 @@ public class PopularBancoDados {
         EPIService epiService = new EPIService(em);
 
         System.out.println("Iniciando população do banco de dados...\n");
+        limparDadosExistentes(em);
 
         Canteiro canteiro1 = new Canteiro();
         canteiro1.setNome("Obra Residencial Vila Nova");
