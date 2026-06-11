@@ -24,7 +24,7 @@ Sistema para **controlar a frequência dos trabalhadores em canteiros de obras**
 
 **Tecnologias:** Java 21, Sockets TCP, JPA/Hibernate, PostgreSQL, Maven
 
-## Por que usamos TCP?
+## Por que usar TCP?
 
 O registro de ponto precisa **chegar inteiro e na ordem certa**. O TCP garante isso; o UDP não.
 
