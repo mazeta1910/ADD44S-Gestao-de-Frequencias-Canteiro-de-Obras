@@ -11,6 +11,10 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Executa o menu de gestao corporativa no servidor e encaminha entrada/saida
@@ -18,22 +22,30 @@ import java.util.Scanner;
  */
 public final class GestaoRemotaSession {
 
+    private static final String MARCADOR_LINHA = "L|";
+    private static final String MARCADOR_PARCIAL = "P|";
+    private static final String MARCADOR_INPUT = "INPUT|";
+    private static final String MARCADOR_FIM = "GESTAO_FIM";
+    private static final String MARCADOR_ERRO = "GESTAO_ERRO";
+
     private GestaoRemotaSession() {
     }
 
     public static void executarNoServidor(BufferedReader entradaRede, PrintWriter saidaRede) {
         PrintStream saidaOriginal = System.out;
         InputStream entradaOriginal = System.in;
+        PrintStream saidaRedeStream = criarPrintStreamRede(saidaRede);
 
         try {
-            System.setOut(criarPrintStreamRede(saidaRede));
+            System.setOut(saidaRedeStream);
             MenuConsoleSimplificado.definirEntrada(new LinhaSocketInputStream(entradaRede));
             JPAUtil.configurarHostBanco("localhost");
             MenuConsoleSimplificado.exibirMenu();
         } catch (Exception e) {
-            saidaRede.println("GESTAO_ERRO;" + e.getMessage());
+            saidaRede.println(MARCADOR_ERRO + ";" + e.getMessage());
             saidaRede.flush();
         } finally {
+            saidaRedeStream.flush();
             System.setOut(saidaOriginal);
             System.setIn(entradaOriginal);
             MenuConsoleSimplificado.restaurarEntradaPadrao();
@@ -50,7 +62,7 @@ public final class GestaoRemotaSession {
             System.out.println("Erro: servidor encerrou a conexao ao abrir a gestao.");
             return;
         }
-        if (resposta.startsWith("GESTAO_ERRO")) {
+        if (resposta.startsWith(MARCADOR_ERRO)) {
             System.out.println("Erro ao abrir gestao corporativa: " + resposta.substring(resposta.indexOf(';') + 1));
             return;
         }
@@ -62,79 +74,122 @@ public final class GestaoRemotaSession {
         System.out.println("\nPainel remoto conectado ao servidor central.");
         System.out.println("(O banco de dados e acessado no servidor — nao e necessario PostgreSQL neste PC.)\n");
 
-        Thread leitorRede = new Thread(() -> lerSaidaServidor(entradaRede), "gestao-remota-leitor");
+        AtomicBoolean sessaoAtiva = new AtomicBoolean(true);
+        BlockingQueue<Object> sinaisEntrada = new LinkedBlockingQueue<>();
+
+        Thread leitorRede = new Thread(
+                () -> lerSaidaServidor(entradaRede, sessaoAtiva, sinaisEntrada),
+                "gestao-remota-leitor"
+        );
         leitorRede.setDaemon(true);
         leitorRede.start();
 
-        try {
-            while (leitorRede.isAlive()) {
-                if (!console.hasNextLine()) {
-                    Thread.sleep(50);
-                    continue;
-                }
-                String linha = console.nextLine();
-                saidaRede.println(linha);
-                saidaRede.flush();
+        while (sessaoAtiva.get()) {
+            Object sinal = sinaisEntrada.poll(200, TimeUnit.MILLISECONDS);
+            if (!sessaoAtiva.get()) {
+                break;
             }
-        } finally {
-            leitorRede.join(2_000);
+            if (sinal == null) {
+                continue;
+            }
+
+            String linha = console.nextLine();
+            saidaRede.println(linha);
+            saidaRede.flush();
         }
+
+        leitorRede.join(3_000);
     }
 
-    private static void lerSaidaServidor(BufferedReader entradaRede) {
+    private static void lerSaidaServidor(
+            BufferedReader entradaRede,
+            AtomicBoolean sessaoAtiva,
+            BlockingQueue<Object> sinaisEntrada
+    ) {
         try {
             String linha;
             while ((linha = entradaRede.readLine()) != null) {
-                if ("GESTAO_FIM".equals(linha)) {
+                if (MARCADOR_FIM.equals(linha)) {
+                    sessaoAtiva.set(false);
+                    sinaisEntrada.offer(Boolean.FALSE);
                     break;
                 }
-                if (linha.startsWith("GESTAO_ERRO")) {
+                if (linha.startsWith(MARCADOR_ERRO)) {
                     System.out.println("Erro no servidor: " + linha.substring(linha.indexOf(';') + 1));
+                    sessaoAtiva.set(false);
+                    sinaisEntrada.offer(Boolean.FALSE);
                     break;
                 }
-                if (linha.startsWith("P|")) {
-                    System.out.print(linha.substring(2));
-                } else if (linha.startsWith("L|")) {
-                    System.out.println(linha.substring(2));
+                if (linha.startsWith(MARCADOR_INPUT)) {
+                    sinaisEntrada.offer(Boolean.TRUE);
+                    continue;
+                }
+                if (linha.startsWith(MARCADOR_PARCIAL)) {
+                    System.out.print(linha.substring(MARCADOR_PARCIAL.length()));
+                } else if (linha.startsWith(MARCADOR_LINHA)) {
+                    System.out.println(linha.substring(MARCADOR_LINHA.length()));
                 } else {
                     System.out.println(linha);
                 }
             }
         } catch (IOException e) {
             System.out.println("Conexao com o servidor interrompida durante a gestao remota.");
+        } finally {
+            sessaoAtiva.set(false);
+            sinaisEntrada.offer(Boolean.FALSE);
         }
     }
 
     private static PrintStream criarPrintStreamRede(PrintWriter saidaRede) {
         OutputStream base = new OutputStream() {
-            private final StringBuilder buffer = new StringBuilder();
+            private final StringBuilder acumulado = new StringBuilder();
 
             @Override
-            public void write(int b) {
-                if (b == '\n') {
-                    enviarLinhaCompleta();
-                } else if (b != '\r') {
-                    buffer.append((char) b);
+            public synchronized void write(byte[] bytes, int offset, int length) {
+                if (length <= 0) {
+                    return;
                 }
+                processar(new String(bytes, offset, length, StandardCharsets.UTF_8));
             }
 
             @Override
-            public void flush() {
-                if (!buffer.isEmpty()) {
-                    saidaRede.println("P|" + buffer);
-                    buffer.setLength(0);
-                }
+            public synchronized void write(int b) {
+                write(new byte[]{(byte) b}, 0, 1);
+            }
+
+            @Override
+            public synchronized void flush() {
+                enviarParcial();
                 saidaRede.flush();
             }
 
+            private void processar(String chunk) {
+                for (int i = 0; i < chunk.length(); i++) {
+                    char c = chunk.charAt(i);
+                    if (c == '\n') {
+                        enviarLinhaCompleta();
+                    } else if (c != '\r') {
+                        acumulado.append(c);
+                    }
+                }
+            }
+
+            private void enviarParcial() {
+                if (acumulado.isEmpty()) {
+                    return;
+                }
+                saidaRede.println(MARCADOR_PARCIAL + acumulado);
+                saidaRede.println(MARCADOR_INPUT);
+                acumulado.setLength(0);
+            }
+
             private void enviarLinhaCompleta() {
-                saidaRede.println("L|" + buffer);
-                buffer.setLength(0);
+                saidaRede.println(MARCADOR_LINHA + acumulado);
+                acumulado.setLength(0);
             }
         };
 
-        PrintStream stream = new PrintStream(base, true, StandardCharsets.UTF_8);
-        return new PrintStream(stream, true, StandardCharsets.UTF_8) {
+        return new PrintStream(base, true, StandardCharsets.UTF_8) {
             @Override
             public void print(String s) {
                 super.print(s);

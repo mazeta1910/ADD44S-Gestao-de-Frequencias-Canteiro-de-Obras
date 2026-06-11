@@ -3,6 +3,13 @@ package br.edu.utfpr.network;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.net.Socket;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
@@ -111,5 +118,21 @@ public final class NetworkConfig {
         }
 
         return ips;
+    }
+
+    public static BufferedReader leitor(Socket socket) {
+        try {
+            return new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new IllegalStateException("Erro ao abrir leitor do socket", e);
+        }
+    }
+
+    public static PrintWriter escritor(Socket socket) {
+        try {
+            return new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8), true);
+        } catch (IOException e) {
+            throw new IllegalStateException("Erro ao abrir escritor do socket", e);
+        }
     }
 }

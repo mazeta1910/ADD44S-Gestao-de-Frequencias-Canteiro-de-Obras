@@ -2,7 +2,6 @@ package br.edu.utfpr.network;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.Scanner;
@@ -12,7 +11,7 @@ import br.edu.utfpr.util.JornadaUtil;
 public class TerminalCanteiroClienteTCP {
 
     public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
+        Scanner scanner = new Scanner(System.in, java.nio.charset.StandardCharsets.UTF_8);
 
         System.out.println("=======================================");
         System.out.println("   TERMINAL DE ACESSO - CANTEIRO");
@@ -44,8 +43,8 @@ public class TerminalCanteiroClienteTCP {
 
         try (
                 Socket socket = new Socket(ipServidor, portaServidor);
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))
+                PrintWriter out = NetworkConfig.escritor(socket);
+                BufferedReader in = NetworkConfig.leitor(socket)
         ) {
             // Usa o Socket para autenticar no Nodo 1
             out.println("AUTH:" + cpf);
