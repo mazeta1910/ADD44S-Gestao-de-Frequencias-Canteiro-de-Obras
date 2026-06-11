@@ -177,7 +177,17 @@ Isso evita expor o banco de dados na rede local — apenas o servidor central pr
 
 ### 6. Configuração de rede (`NetworkConfig`)
 
-Centraliza IP padrão (`127.0.0.1`), porta (`8080`), codificação UTF-8 nos streams e listagem dos IPs locais que o servidor exibe ao iniciar, facilitando a conexão de outros PCs na LAN.
+Centraliza IP padrão (`127.0.0.1`), porta (`8080`), codificação UTF-8 nos streams e a descoberta dos IPs da máquina servidor.
+
+**Como o servidor descobre o IP da máquina:** ao iniciar, `ServidorCentralTCP` chama `NetworkConfig.listarIpsLocais()`. Esse método percorre todas as **interfaces de rede** do PC com a API Java (`NetworkInterface.getNetworkInterfaces()`), ignora interfaces desligadas ou de loopback (`127.0.0.1`), e coleta apenas endereços **IPv4** ativos — por exemplo `192.168.1.10` da placa Wi-Fi ou Ethernet. Os IPs encontrados são impressos no console para o operador informar no terminal remoto. Se nenhum IP de rede for encontrado, o servidor sugere `127.0.0.1` (acesso só neste computador).
+
+```java
+Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+// Para cada interface ativa (não loopback):
+//   coleta Inet4Address → ips.add(endereco.getHostAddress())
+```
+
+O **cliente**, por sua vez, não descobre o IP sozinho: ele recebe o IP do servidor por argumento (`TerminalCanteiroClienteTCP 192.168.1.10 8080`), variável de ambiente (`SERVIDOR_IP`) ou digitação manual no terminal.
 
 ---
 
