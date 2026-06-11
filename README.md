@@ -45,6 +45,18 @@ UDP seria adequado para telemetria descartável (ex.: sensor de temperatura); n�
 | `GestaoRemotaSession` | Painel admin roda no servidor, interface no terminal |
 | `PopularBancoDados` | Popula dados de demonstração |
 
+## Threads
+
+O projeto usa threads em três situações distintas:
+
+| Onde | Para quê |
+|------|----------|
+| `ServidorCentralTCP` | Uma thread por conexão TCP — vários terminais atendidos em paralelo |
+| `GestaoRemotaSession` | Thread auxiliar lê saída do servidor enquanto o usuário digita no cliente |
+| `ProcessadorFolhaPagamento` | Cálculo paralelo da folha (menu admin → Análise de Desempenho) |
+
+No servidor, cada `accept()` dispara `new Thread(() -> processarRequisicao(...))`. O acesso ao banco é protegido com `synchronized` em `JPAUtil`, já que múltiplas threads compartilham o `EntityManagerFactory`.
+
 ## Como executar
 
 ```text
