@@ -73,6 +73,18 @@ Exemplo: `TerminalCanteiroClienteTCP 192.168.1.10 8080`
 
 > Use o **IP da rede local** exibido pelo servidor, não `127.0.0.1`, quando conectar de outro computador. Libere a porta **8080** no firewall.
 
+## Usuários de demonstração
+
+Após executar `PopularBancoDados`, utilize estes CPFs para login no terminal:
+
+| Perfil | Nome | CPF |
+|--------|------|-----|
+| Estagiário | Lucas Ferreira | `44444444444` |
+| CLT | João Mestre de Obras | `22222222222` |
+| Administrador | Matheus C. P. Santos | `11111111111` |
+
+> O administrador tem acesso à **opção 7** (Painel de Gestão). Os demais perfis registram ponto normalmente.
+
 ## Funcionalidades
 
 - Registro de ponto (entrada, intervalo, retorno, saída)
