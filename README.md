@@ -19,8 +19,16 @@ Sistema para **controlar a frequência dos trabalhadores em canteiros de obras**
 
 | Computador | O que faz |
 |------------|-----------|
-| Servidor | Valida o CPF, registra o ponto, salva no banco e roda o painel de gestão |
+| Servidor central | Valida o CPF, registra o ponto, salva no banco e roda o painel de gestão |
 | Terminal do canteiro | Tela para o trabalhador bater ponto; o admin pode abrir o menu completo (opção 7) |
+
+**Quem conecta em quem?**
+
+O trabalhador **não acessa o servidor direto**. Ele usa o **PC do canteiro** (programa cliente), digita o CPF e escolhe as opções. Esse terminal é quem **se conecta pela rede ao servidor central**, onde ficam o banco e todos os registros.
+
+```
+Trabalhador → PC do canteiro (cliente) → TCP → Servidor central (banco PostgreSQL)
+```
 
 **Tecnologias:** Java 21, Sockets TCP, JPA/Hibernate, PostgreSQL, Maven
 
@@ -53,7 +61,15 @@ O UDP serviria para coisas que podem perder dados sem problema (ex.: leitura de 
 | `GestaoRemotaSession` | Uma thread lê o que o servidor manda enquanto o usuário digita |
 | `ProcessadorFolhaPagamento` | Divide o cálculo da folha entre várias threads (menu admin → Análise de Desempenho) |
 
-**No servidor:** quando um canteiro conecta, abre-se uma thread só para ele. Dois trabalhadores podem bater ponto ao mesmo tempo sem um travar o outro.
+**Thread = conexão do terminal, não o canteiro em si.** O servidor cria uma thread quando um `TerminalCanteiroClienteTCP` conecta. Na prática, se cada canteiro tiver **um PC com o terminal ligado**, dá para dizer que **cada canteiro usa uma thread**:
+
+| Situação | Threads no servidor |
+|----------|---------------------|
+| 1 canteiro, 1 terminal conectado | 1 thread |
+| 3 canteiros, 1 terminal em cada | 3 threads |
+| 1 canteiro, 2 terminais conectados ao mesmo tempo | 2 threads |
+
+Assim, vários canteiros podem bater ponto **ao mesmo tempo** sem um travar o outro.
 
 **No banco:** como várias threads gravam juntas, o `JPAUtil` usa `synchronized` para que duas threads não abram conexão com o banco ao mesmo tempo e gerem erro.
 
