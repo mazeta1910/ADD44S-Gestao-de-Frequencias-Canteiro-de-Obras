@@ -159,48 +159,65 @@ sequenceDiagram
 
 ---
 
-## 8. Código principal
+## 8. Código principal — Sockets TCP
 
-**Servidor — uma thread por terminal** (`ServidorCentralTCP.java`):
+A comunicação usa as classes `ServerSocket` e `Socket` do Java. O TCP abre um **canal persistente**: cliente e servidor trocam mensagens com `PrintWriter` (saída) e `BufferedReader` (entrada) ligados aos streams do socket.
+
+**Servidor — `ServerSocket` escuta e `accept()` aceita a conexão TCP** (`ServidorCentralTCP.java`):
 
 ```java
-while (true) {
-    // Fica parado até algum terminal do canteiro conectar
-    Socket clientSocket = serverSocket.accept();
+// ServerSocket fica escutando a porta 8080 aguardando conexões TCP
+try (ServerSocket serverSocket = new ServerSocket(porta)) {
+    while (true) {
+        // accept() bloqueia até um cliente conectar — retorna o Socket da sessão
+        Socket clientSocket = serverSocket.accept();
 
-    // Thread só para esse cliente — outro terminal não precisa esperar
-    new Thread(() -> processarRequisicao(clientSocket)).start();
+        // Cada Socket TCP ganha uma thread — concorrência entre terminais
+        new Thread(() -> processarRequisicao(clientSocket)).start();
+    }
 }
 ```
 
-**Terminal — conexão e login** (`TerminalCanteiroClienteTCP.java`):
+**Terminal — `Socket` conecta ao servidor e abre os streams TCP** (`TerminalCanteiroClienteTCP.java`):
 
 ```java
-// Abre conexão TCP com o servidor central
-Socket socket = new Socket(ipServidor, portaServidor);
+// Socket(ip, porta) inicia o handshake TCP com o servidor central
+try (
+    Socket socket = new Socket(ipServidor, portaServidor);
+    PrintWriter out = NetworkConfig.escritor(socket);   // saída → socket.getOutputStream()
+    BufferedReader in = NetworkConfig.leitor(socket)    // entrada ← socket.getInputStream()
+) {
+    // Envia uma linha pelo canal TCP (println adiciona \n no fim da mensagem)
+    out.println("AUTH:" + cpf);
 
-// Envia CPF para validação no banco
-out.println("AUTH:" + cpf);
-
-// Aguarda: AUTH_SUCCESS (liberado) ou AUTH_FAILED (negado)
-String respostaAuth = in.readLine();
+    // Bloqueia até o servidor responder pela mesma conexão TCP
+    String respostaAuth = in.readLine();
+}
 ```
 
-**Servidor — login antes dos comandos** (`ServidorCentralTCP.java`):
+**Servidor — leitura e escrita pelo canal TCP** (`ServidorCentralTCP.java`):
 
 ```java
+// Streams criados a partir do Socket aceito — canal aberto com aquele terminal
+BufferedReader in = NetworkConfig.leitor(clientSocket);
+PrintWriter out = NetworkConfig.escritor(clientSocket);
+
+// Lê linhas do socket enquanto a conexão TCP estiver ativa
 while ((mensagem = in.readLine()) != null) {
-    // Autenticação — busca CPF no PostgreSQL
-    if (mensagem.startsWith("AUTH:")) { /* valida e guarda na sessão */ }
-
-    // Comandos de ponto — só após login (cpfAutenticado != null)
-    else if (mensagem.startsWith("CMD:")) { /* grava no banco e devolve RESULTADO */ }
+    if (mensagem.startsWith("AUTH:")) {
+        // Responde pelo mesmo socket TCP
+        out.println("AUTH_SUCCESS;OPERACIONAL;" + nome);
+    }
+    else if (mensagem.startsWith("CMD:") && cpfAutenticado != null) {
+        // Processa comando e devolve resultado pela conexão
+        out.println("RESULTADO;Entrada registrada as 08:00");
+    }
 }
 ```
 
-**IP do servidor** — ao ligar, lista os IPs do PC (ex.: `192.168.1.10`) para digitar no terminal do canteiro.
+**IP do servidor** — `NetworkConfig.listarIpsLocais()` mostra o IP do PC (ex.: `192.168.1.10`) para o terminal saber onde abrir o `Socket`.
 
-**Gestão remota (opção 7)** — menu admin roda no servidor; o terminal só exibe a tela e envia o que o usuário digita.
+**Gestão remota (opção 7)** — o menu admin reutiliza o **mesmo Socket TCP**; saída e entrada trafegam pelo canal já aberto.
 
 ---
 
