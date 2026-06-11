@@ -4,9 +4,19 @@
 **Acadêmico:** Matheus C. P. Santos — RA 2609380  
 **UTFPR** Campus Pato Branco — Trabalho III (Sockets TCP)
 
-Sistema para **controlar a frequência dos trabalhadores em canteiros de obras**. Um **computador central** guarda todos os dados no banco PostgreSQL. Os **terminais nos canteiros** se conectam a ele pela rede usando **TCP** para bater ponto.
+---
 
-## Como o sistema funciona
+## 1. Sobre o projeto
+
+Sistema para **controlar a frequência dos trabalhadores em canteiros de obras**, alinhado ao ODS 8 (Trabalho Decente).
+
+- **Servidor central** — concentra o banco PostgreSQL e processa tudo
+- **Terminais nos canteiros** — interface para bater ponto pela rede
+- **Comunicação** — Sockets TCP na porta 8080
+
+---
+
+## 2. Arquitetura
 
 ```
 ┌─────────────────────────────┐      TCP :8080       ┌──────────────────────────────┐
@@ -17,79 +27,92 @@ Sistema para **controlar a frequência dos trabalhadores em canteiros de obras**
                                                        PostgreSQL (trabalho_decente)
 ```
 
-| Computador | O que faz |
-|------------|-----------|
-| Servidor central | Valida o CPF, registra o ponto, salva no banco e roda o painel de gestão |
-| Terminal do canteiro | Tela para o trabalhador bater ponto; o admin pode abrir o menu completo (opção 7) |
+| Computador | Papel |
+|------------|-------|
+| Servidor central | Valida CPF, registra ponto, salva no banco, painel de gestão |
+| Terminal do canteiro | Tela de ponto; admin acessa menu completo (opção 7) |
 
 **Quem conecta em quem?**
 
-O trabalhador **não acessa o servidor direto**. Ele usa o **PC do canteiro** (programa cliente), digita o CPF e escolhe as opções. Esse terminal é quem **se conecta pela rede ao servidor central**, onde ficam o banco e todos os registros.
+O trabalhador usa o **PC do canteiro** (cliente), digita o CPF e escolhe as opções. Esse terminal **se conecta ao servidor central** — não o contrário.
 
 ```
-Trabalhador → PC do canteiro (cliente) → TCP → Servidor central (banco PostgreSQL)
+Trabalhador → PC do canteiro → TCP → Servidor central → PostgreSQL
 ```
 
-**Tecnologias:** Java 21, Sockets TCP, JPA/Hibernate, PostgreSQL, Maven
+**Tecnologias:** Java 21 · Sockets TCP · JPA/Hibernate · PostgreSQL · Maven
 
-## Por que usar TCP?
+---
 
-O registro de ponto precisa **chegar inteiro e na ordem certa**. O TCP garante isso; o UDP não.
+## 3. Por que TCP?
 
-- Depois do login com CPF, cliente e servidor ficam **conectados o tempo todo**
-- Cada ação do menu **envia um pedido e espera a resposta** do servidor
-- Vários terminais podem usar o sistema **ao mesmo tempo** (cada um em sua thread)
-- O painel de gestão do admin troca muitas mensagens pela mesma conexão
+O registro de ponto precisa **chegar inteiro e na ordem certa**. TCP garante isso; UDP não.
 
-O UDP serviria para coisas que podem perder dados sem problema (ex.: leitura de um sensor). Para ponto e folha de frequência, TCP é o certo.
+- Cliente e servidor ficam **conectados** durante toda a sessão
+- Cada ação envia um **pedido e espera resposta** (`RESULTADO`, `FIM_FICHA`)
+- Vários terminais usam o sistema **ao mesmo tempo** (uma thread por conexão)
+- UDP serviria para dados que podem se perder (ex.: sensor); **não para folha de ponto**
 
-## Principais classes
+---
+
+## 4. Principais classes
 
 | Classe | O que faz |
 |--------|-----------|
-| `ServidorCentralTCP` | Fica escutando na porta 8080, recebe pedidos e grava no banco |
-| `TerminalCanteiroClienteTCP` | Programa do canteiro — conecta, faz login e mostra o menu |
-| `NetworkConfig` | Configura IP, porta e mostra os IPs do servidor na tela |
-| `GestaoRemotaSession` | Permite usar o painel admin no canteiro, mas o processamento fica no servidor |
-| `PopularBancoDados` | Cria dados de teste no banco |
+| `ServidorCentralTCP` | Escuta na porta 8080, processa comandos, grava no banco |
+| `TerminalCanteiroClienteTCP` | Conecta ao servidor, faz login e exibe o menu |
+| `NetworkConfig` | IP, porta e listagem dos IPs do servidor |
+| `GestaoRemotaSession` | Painel admin no canteiro, processamento no servidor |
+| `PopularBancoDados` | Cria dados de demonstração |
 
-## Threads (execução em paralelo)
+---
+
+## 5. Threads
+
+Cada **terminal conectado** ganha uma **thread** no servidor.
 
 | Onde | Para quê |
 |------|----------|
-| `ServidorCentralTCP` | Cada terminal conectado ganha sua própria thread |
-| `GestaoRemotaSession` | Uma thread lê o que o servidor manda enquanto o usuário digita |
-| `ProcessadorFolhaPagamento` | Divide o cálculo da folha entre várias threads (menu admin → Análise de Desempenho) |
+| `ServidorCentralTCP` | Uma thread por conexão TCP — terminais em paralelo |
+| `GestaoRemotaSession` | Thread lê saída do servidor enquanto o usuário digita |
+| `ProcessadorFolhaPagamento` | Cálculo paralelo da folha (menu admin → Análise de Desempenho) |
 
-**Thread = conexão do terminal, não o canteiro em si.** O servidor cria uma thread quando um `TerminalCanteiroClienteTCP` conecta. Na prática, se cada canteiro tiver **um PC com o terminal ligado**, dá para dizer que **cada canteiro usa uma thread**:
+**Regra:** thread = conexão do terminal. Se cada canteiro tem 1 PC ligado, cada canteiro usa 1 thread.
 
-| Situação | Threads no servidor |
-|----------|---------------------|
-| 1 canteiro, 1 terminal conectado | 1 thread |
-| 3 canteiros, 1 terminal em cada | 3 threads |
-| 1 canteiro, 2 terminais conectados ao mesmo tempo | 2 threads |
+**Exemplo — 3 funcionários, 3 PCs, mesmo canteiro:**
 
-Assim, vários canteiros podem bater ponto **ao mesmo tempo** sem um travar o outro.
-
-**No banco:** como várias threads gravam juntas, o `JPAUtil` usa `synchronized` para que duas threads não abram conexão com o banco ao mesmo tempo e gerem erro.
-
-## Como rodar
-
-```text
-1. PopularBancoDados          # só na primeira vez
-2. ServidorCentralTCP         # no PC servidor (anote o IP que aparecer)
-3. TerminalCanteiroClienteTCP 192.168.x.x 8080   # no PC do canteiro
+```
+ServidorCentralTCP
+├── Thread 1 → João  (CPF 22222222222)
+├── Thread 2 → Lucas (CPF 44444444444)
+└── Thread 3 → Maria (outro CPF)
 ```
 
-> Entre dois computadores, use o IP da rede (tipo `192.168.1.10`), não `127.0.0.1`. Libere a porta **8080** no firewall.
+Cada um faz login e bate ponto **em paralelo**, sem misturar registros. No **mesmo PC**, um usa por vez — sai (opção 6), o próximo conecta.
+
+**No banco:** o `JPAUtil` usa `synchronized` para evitar conflito quando várias threads gravam juntas.
+
+---
+
+## 6. Demonstração — como rodar
+
+```text
+1. PopularBancoDados          # primeira vez
+2. ServidorCentralTCP         # PC servidor — anote o IP exibido
+3. TerminalCanteiroClienteTCP 192.168.x.x 8080   # PC do canteiro
+```
+
+> Use IP da rede local (`192.168.x.x`), não `127.0.0.1`, entre PCs diferentes. Libere a porta **8080** no firewall.
 
 | Perfil | CPF | Observação |
 |--------|-----|------------|
-| Administrador | `11111111111` | Tem a opção 7 — Painel de Gestão |
-| CLT | `22222222222` | Só bate ponto |
-| Estagiário | `44444444444` | Só bate ponto |
+| Administrador | `11111111111` | Opção 7 — Painel de Gestão |
+| CLT | `22222222222` | Registro de ponto |
+| Estagiário | `44444444444` | Registro de ponto |
 
-## O que acontece na comunicação
+---
+
+## 7. Fluxo da comunicação
 
 ```mermaid
 sequenceDiagram
@@ -116,18 +139,16 @@ sequenceDiagram
     S-->>C: Desconectado
 ```
 
-### Passo a passo
+| # | Etapa |
+|---|-------|
+| 1 | Servidor liga na porta 8080 e aguarda conexão |
+| 2 | Terminal conecta → servidor abre uma thread |
+| 3 | Terminal envia CPF → servidor valida no banco |
+| 4 | Terminal pede estado → servidor monta o menu |
+| 5 | Trabalhador escolhe opção → servidor grava e confirma |
+| 6 | Opção Sair → conexão encerra |
 
-| # | O que acontece |
-|---|----------------|
-| 1 | Servidor liga na porta 8080, mostra os IPs e fica esperando conexão |
-| 2 | Terminal conecta ao servidor pela rede |
-| 3 | Terminal envia o CPF → servidor confere no banco |
-| 4 | Servidor informa o estado da jornada → terminal monta o menu |
-| 5 | Trabalhador escolhe uma opção → servidor grava e confirma |
-| 6 | Ao sair, a conexão é encerrada |
-
-### Mensagens trocadas (uma por linha)
+### Mensagens (uma linha por vez)
 
 | Tipo | Exemplo |
 |------|---------|
@@ -136,52 +157,50 @@ sequenceDiagram
 | Login OK | `AUTH_SUCCESS;OPERACIONAL;João...` |
 | Confirmação | `RESULTADO;Entrada registrada as 08:00` |
 
-## Trechos importantes do código
+---
 
-**Servidor atende cada terminal em paralelo** (`ServidorCentralTCP.java`):
+## 8. Código principal
+
+**Servidor — uma thread por terminal** (`ServidorCentralTCP.java`):
 
 ```java
 while (true) {
-    // Fica parado aqui até algum terminal do canteiro tentar conectar
+    // Fica parado até algum terminal do canteiro conectar
     Socket clientSocket = serverSocket.accept();
 
-    // Cria uma thread só para esse cliente — assim outro terminal
-    // pode conectar sem ficar esperando o primeiro terminar de bater ponto
+    // Thread só para esse cliente — outro terminal não precisa esperar
     new Thread(() -> processarRequisicao(clientSocket)).start();
 }
 ```
 
-**Terminal conecta e faz login** (`TerminalCanteiroClienteTCP.java`):
+**Terminal — conexão e login** (`TerminalCanteiroClienteTCP.java`):
 
 ```java
-// Abre a conexão TCP com o servidor central (handshake pela rede)
+// Abre conexão TCP com o servidor central
 Socket socket = new Socket(ipServidor, portaServidor);
 
-// Envia o CPF para o servidor validar no banco de dados
+// Envia CPF para validação no banco
 out.println("AUTH:" + cpf);
 
-// Fica aguardando a resposta: AUTH_SUCCESS (liberado) ou AUTH_FAILED (negado)
+// Aguarda: AUTH_SUCCESS (liberado) ou AUTH_FAILED (negado)
 String respostaAuth = in.readLine();
 ```
 
-**Servidor separa login de comandos** (`ServidorCentralTCP.java`):
+**Servidor — login antes dos comandos** (`ServidorCentralTCP.java`):
 
 ```java
-// Lê mensagens do terminal, uma linha por vez, enquanto a conexão estiver aberta
 while ((mensagem = in.readLine()) != null) {
+    // Autenticação — busca CPF no PostgreSQL
+    if (mensagem.startsWith("AUTH:")) { /* valida e guarda na sessão */ }
 
-    // Primeiro passo: autenticação — busca o CPF no PostgreSQL
-    if (mensagem.startsWith("AUTH:")) { /* valida CPF e guarda na sessão */ }
-
-    // Depois do login: comandos de ponto, ficha, gestão etc.
-    // Só aceita CMD se o usuário já tiver se autenticado (cpfAutenticado != null)
+    // Comandos de ponto — só após login (cpfAutenticado != null)
     else if (mensagem.startsWith("CMD:")) { /* grava no banco e devolve RESULTADO */ }
 }
 ```
 
-**IP do servidor** — ao ligar, o servidor lista os IPs do PC (ex.: `192.168.1.10`) para o operador digitar no terminal do canteiro.
+**IP do servidor** — ao ligar, lista os IPs do PC (ex.: `192.168.1.10`) para digitar no terminal do canteiro.
 
-**Gestão remota (opção 7)** — o menu admin roda no servidor (onde está o banco). O terminal do canteiro só mostra a tela e envia o que o usuário digita.
+**Gestão remota (opção 7)** — menu admin roda no servidor; o terminal só exibe a tela e envia o que o usuário digita.
 
 ---
 
