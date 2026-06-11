@@ -189,6 +189,371 @@ Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces
 
 O **cliente**, por sua vez, não descobre o IP sozinho: ele recebe o IP do servidor por argumento (`TerminalCanteiroClienteTCP 192.168.1.10 8080`), variável de ambiente (`SERVIDOR_IP`) ou digitação manual no terminal.
 
+## Passo a passo: do cliente ao servidor
+
+Fluxo completo desde a execução dos programas até o registro de ponto, com os **trechos de código** onde cada etapa ocorre.
+
+### Fase 1 — Servidor liga e fica aguardando
+
+| Etapa | Onde | O que acontece |
+|-------|------|----------------|
+| 1 | `ServidorCentralTCP.main` | Resolve a porta (padrão **8080**) via `NetworkConfig` |
+| 2 | `iniciarServidor` | Abre `ServerSocket` e fica em loop infinito escutando |
+| 3 | `listarIpsLocais` | Lista IPs IPv4 da máquina (ex.: `192.168.1.10`) no console |
+| 4 | `accept()` | Bloqueia até algum terminal remoto tentar conectar |
+
+**Código — `ServidorCentralTCP.java`:**
+
+```java
+// main: resolve porta e chama iniciarServidor
+int porta = NetworkConfig.resolverPortaServidor(args);
+iniciarServidor(porta);
+
+// iniciarServidor: abre ServerSocket, lista IPs e aguarda conexões
+try (ServerSocket serverSocket = new ServerSocket(porta)) {
+    List<String> ipsLocais = NetworkConfig.listarIpsLocais();
+    // ... imprime IPs no console ...
+    while (true) {
+        Socket clientSocket = serverSocket.accept();
+        new Thread(() -> processarRequisicao(clientSocket)).start();
+    }
+}
+```
+
+**Código — descoberta de IP em `NetworkConfig.java`:**
+
+```java
+Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+while (interfaces.hasMoreElements()) {
+    NetworkInterface iface = interfaces.nextElement();
+    if (!iface.isUp() || iface.isLoopback()) continue;
+    // coleta Inet4Address ativos → ips.add(endereco.getHostAddress())
+}
+```
+
+### Fase 2 — Cliente inicia e abre a conexão TCP
+
+| Etapa | Onde | O que acontece |
+|-------|------|----------------|
+| 1 | `TerminalCanteiroClienteTCP.main` | Exibe o banner do terminal |
+| 2 | `NetworkConfig` | Obtém IP e porta (argumentos, env ou digitação do usuário) |
+| 3 | Teclado | Usuário digita o **CPF** antes de conectar |
+| 4 | `new Socket(ip, porta)` | Cliente inicia handshake TCP com o servidor |
+| 5 | Servidor | `accept()` retorna um `Socket`; cria **nova thread** para esse cliente |
+| 6 | Ambos | Abrem streams UTF-8: `BufferedReader` (leitura) e `PrintWriter` (escrita) |
+
+**Código — cliente (`TerminalCanteiroClienteTCP.java`, linhas 20–47):**
+
+```java
+String ipServidor = NetworkConfig.resolverIpServidor(args);
+int portaServidor = NetworkConfig.resolverPortaServidor(args);
+// ... usuário pode digitar IP/porta se não passou por argumento ...
+
+System.out.print("\nDigite seu CPF: ");
+String cpf = scanner.nextLine();
+
+try (
+    Socket socket = new Socket(ipServidor, portaServidor);
+    PrintWriter out = NetworkConfig.escritor(socket);
+    BufferedReader in = NetworkConfig.leitor(socket)
+) {
+    // próxima fase: autenticação
+}
+```
+
+**Código — servidor aceita e abre streams (`ServidorCentralTCP.java`, linhas 57–61):**
+
+```java
+private static void processarRequisicao(Socket clientSocket) {
+    try (
+        BufferedReader in = NetworkConfig.leitor(clientSocket);
+        PrintWriter out = NetworkConfig.escritor(clientSocket)
+    ) {
+        // loop de mensagens...
+    }
+}
+```
+
+**Código — streams UTF-8 (`NetworkConfig.java`, linhas 123–137):**
+
+```java
+public static BufferedReader leitor(Socket socket) {
+    return new BufferedReader(new InputStreamReader(
+        socket.getInputStream(), StandardCharsets.UTF_8));
+}
+public static PrintWriter escritor(Socket socket) {
+    return new PrintWriter(new OutputStreamWriter(
+        socket.getOutputStream(), StandardCharsets.UTF_8), true);
+}
+```
+
+### Fase 3 — Autenticação
+
+| Etapa | Cliente | Servidor |
+|-------|---------|----------|
+| 1 | Envia `AUTH:` + CPF | Recebe a linha |
+| 2 | Aguarda resposta | Busca trabalhador no banco |
+| 3 | Se `AUTH_SUCCESS` → entra no menu | Define perfil (`ADMIN` ou `OPERACIONAL`) e nome |
+| 4 | Se `AUTH_FAILED` → exibe erro e encerra | CPF inválido |
+
+> Comandos `CMD:` só são aceitos **depois** de autenticação — veja a condição `cpfAutenticado != null` no servidor.
+
+**Código — cliente envia CPF (`TerminalCanteiroClienteTCP.java`, linhas 49–61):**
+
+```java
+out.println("AUTH:" + cpf);
+String respostaAuth = in.readLine();
+
+if (respostaAuth != null && respostaAuth.startsWith("AUTH_SUCCESS")) {
+    String[] partes = respostaAuth.split(";");
+    boolean isAdmin = partes[1].equals("ADMIN");
+    String nome = partes[2];
+    System.out.println("\nBem-vindo, " + nome);
+}
+```
+
+**Código — servidor valida no PostgreSQL (`ServidorCentralTCP.java`, linhas 66–82):**
+
+```java
+while ((mensagem = in.readLine()) != null) {
+    if (mensagem.startsWith("AUTH:")) {
+        cpfAutenticado = mensagem.substring(5);
+        EntityManager em = JPAUtil.getEntityManager();
+        try {
+            Trabalhador t = em.createQuery(
+                "SELECT t FROM Trabalhador t WHERE t.cpf = :cpf", Trabalhador.class)
+                .setParameter("cpf", cpfAutenticado).getSingleResult();
+
+            if (t.isAdministrador()) {
+                out.println("AUTH_SUCCESS;ADMIN;" + t.getNomeCompleto());
+            } else {
+                out.println("AUTH_SUCCESS;OPERACIONAL;" + t.getNomeCompleto());
+            }
+        } catch (NoResultException e) {
+            out.println("AUTH_FAILED;CPF_INVALIDO");
+        }
+        em.close();
+    }
+```
+
+### Fase 4 — Loop do menu (a cada volta)
+
+| Etapa | Cliente | Servidor |
+|-------|---------|----------|
+| 1 | Envia `CMD:GET_ESTADO_JORNADA` | Consulta `RegistroPonto` do dia no banco |
+| 2 | Recebe estado + meta + saldo | Calcula o estado da jornada |
+| 3 | Monta menu conforme o estado | — |
+| 4 | Usuário escolhe opção (1–7) | — |
+| 5 | Envia `CMD:` correspondente | Executa comando e responde |
+| 6 | Exibe resultado na tela | Persiste no PostgreSQL (`commit`) |
+
+**Código — cliente pede estado e monta menu (`TerminalCanteiroClienteTCP.java`, linhas 63–103):**
+
+```java
+while (true) {
+    out.println("CMD:GET_ESTADO_JORNADA");
+    String[] respostaEstado = in.readLine().split(";");
+    String estado = respostaEstado[1];
+
+    if (estado.equals("AGUARDANDO_ENTRADA")) {
+        System.out.println("1. Entrada");
+    } else if (estado.equals("EM_TRABALHO")) {
+        System.out.println("2. Saida para Intervalo");
+        System.out.println("4. Saida (Fim do Expediente)");
+    }
+    // ... demais estados ...
+
+    System.out.print("Opcao: ");
+    String opcao = scanner.nextLine();
+```
+
+**Código — servidor calcula estado (`ServidorCentralTCP.java`, linhas 83–166):**
+
+```java
+} else if (mensagem.startsWith("CMD:") && cpfAutenticado != null) {
+    String comando = mensagem.substring(4);
+
+    EntityManager em = JPAUtil.getEntityManager();
+    em.getTransaction().begin();
+    // busca Trabalhador e RegistroPonto do dia (cria se não existir)
+
+    if (comando.equals("GET_ESTADO_JORNADA")) {
+        String estado;
+        if (registroDiario.getHoraEntrada() == null) {
+            estado = "AGUARDANDO_ENTRADA";
+        } else if (registroDiario.getHoraSaidaIntervalo() == null
+                && registroDiario.getHoraSaida() == null) {
+            estado = "EM_TRABALHO";
+        }
+        // ... EM_INTERVALO, EM_TRABALHO_POS_INTERVALO, JORNADA_FINALIZADA ...
+        out.println(JornadaUtil.montarRespostaEstado(estado, registroDiario, t, agora));
+    }
+```
+
+### Fase 5 — Exemplo: registrar entrada (opção 1)
+
+**Código — cliente envia comando (`TerminalCanteiroClienteTCP.java`, linhas 106–107 e 136–137):**
+
+```java
+if (opcao.equals("1") && estado.equals("AGUARDANDO_ENTRADA")) {
+    out.println("CMD:PONTO_ENTRADA");
+    opcaoValida = true;
+}
+// após envio, lê confirmação:
+if (opcaoValida && !opcao.equals("5") && !opcao.equals("7")) {
+    System.out.println("\n" + in.readLine().split(";")[1]);
+}
+```
+
+**Código — servidor grava entrada (`ServidorCentralTCP.java`, linhas 132–134 e 198–200):**
+
+```java
+if (comando.equals("PONTO_ENTRADA")) {
+    registroDiario.setHoraEntrada(agora);
+    out.println("RESULTADO;Entrada registrada as " + agora.format(fmt));
+}
+// ao final de cada comando:
+if (em.getTransaction().isActive()) {
+    em.getTransaction().commit();
+}
+em.close();
+```
+
+### Fase 6 — Outras ações comuns
+
+| Opção | Comando | Trecho no servidor |
+|-------|---------|-------------------|
+| 2 — Intervalo | `CMD:PONTO_INTERVALO` | `setHoraSaidaIntervalo(agora)` |
+| 3 — Retorno | `CMD:PONTO_RETORNO` | `setHoraRetornoIntervalo(agora)` |
+| 4 — Saída | `CMD:PONTO_SAIDA` | `setHoraSaida(agora)` + `JornadaUtil.calcularSaldo` |
+| 5 — Ficha | `CMD:FICHA_FREQUENCIA` | loop `out.println(...)` + `FIM_FICHA` |
+| 7 — Gestão | `CMD:GESTAO_INICIAR` | `GestaoRemotaSession.executarNoServidor` |
+
+**Ficha de frequência — cliente lê várias linhas (`TerminalCanteiroClienteTCP.java`, linhas 114–120):**
+
+```java
+} else if (opcao.equals("5")) {
+    out.println("CMD:FICHA_FREQUENCIA");
+    String linha;
+    while (!(linha = in.readLine()).equals("FIM_FICHA")) {
+        System.out.println(linha);
+    }
+}
+```
+
+**Ficha — servidor monta tabela (`ServidorCentralTCP.java`, linhas 167–190):**
+
+```java
+} else if (comando.equals("FICHA_FREQUENCIA")) {
+    List<RegistroPonto> ficha = em.createQuery(
+        "SELECT r FROM RegistroPonto r WHERE r.trabalhador = :t ORDER BY r.dataRegistro DESC",
+        RegistroPonto.class).setParameter("t", t).getResultList();
+    // ... imprime linhas da tabela no socket ...
+    out.println("FIM_FICHA");
+}
+```
+
+**Gestão remota — cliente (`TerminalCanteiroClienteTCP.java`, linha 128):**
+
+```java
+} else if (opcao.equals("7") && isAdmin) {
+    GestaoRemotaSession.executarNoCliente(out, in, scanner);
+}
+```
+
+**Gestão remota — servidor (`ServidorCentralTCP.java`, linhas 86–101):**
+
+```java
+if (comando.equals("GESTAO_INICIAR")) {
+    if (!admin.isAdministrador()) {
+        out.println("GESTAO_ERRO;PERMISSAO_NEGADA");
+    } else {
+        out.println("GESTAO_OK");
+        out.flush();
+        GestaoRemotaSession.executarNoServidor(in, out);
+        out.println("GESTAO_FIM");
+        out.flush();
+    }
+    continue;
+}
+```
+
+**Gestão remota — menu roda no servidor (`GestaoRemotaSession.java`, linhas 34–43):**
+
+```java
+public static void executarNoServidor(BufferedReader entradaRede, PrintWriter saidaRede) {
+    System.setOut(saidaRedeStream);  // System.out → socket TCP
+    MenuConsoleSimplificado.definirEntrada(new LinhaSocketInputStream(entradaRede));
+    JPAUtil.configurarHostBanco("localhost");
+    MenuConsoleSimplificado.exibirMenu();
+}
+```
+
+### Fase 7 — Encerramento
+
+| Etapa | Cliente | Servidor |
+|-------|---------|----------|
+| 1 | Opção 6 (Sair) | — |
+| 2 | `CMD:SAIR` | Responde e encerra loop |
+| 3 | Sai do `while` | `DESCONECTADO` + commit |
+| 4 | `Socket` fecha (try-with-resources) | Thread termina |
+
+**Código — cliente (`TerminalCanteiroClienteTCP.java`, linhas 121–123):**
+
+```java
+} else if (opcao.equals("6")) {
+    out.println("CMD:SAIR");
+    break;
+}
+```
+
+**Código — servidor (`ServidorCentralTCP.java`, linhas 191–206):**
+
+```java
+} else if (comando.equals("SAIR")) {
+    out.println("DESCONECTADO");
+    em.getTransaction().commit();
+    em.close();
+    break;
+}
+// ...
+} catch (Exception e) {
+    System.out.println("Conexao encerrada.");
+}
+```
+
+### Visão geral em sequência
+
+```mermaid
+sequenceDiagram
+    participant C as TerminalCanteiroClienteTCP
+    participant S as ServidorCentralTCP
+    participant DB as PostgreSQL
+
+    Note over S: Fase 1 — ServerSocket na porta 8080
+    C->>S: TCP connect (Socket)
+    S->>S: accept() + nova Thread
+
+    C->>S: AUTH:CPF
+    S->>DB: SELECT Trabalhador
+    DB-->>S: dados do trabalhador
+    S-->>C: AUTH_SUCCESS;perfil;nome
+
+    loop Menu de ponto
+        C->>S: CMD:GET_ESTADO_JORNADA
+        S->>DB: SELECT RegistroPonto (hoje)
+        DB-->>S: registro
+        S-->>C: ESTADO;...;saldo
+        C->>C: exibe menu
+        C->>S: CMD:PONTO_* / FICHA / GESTAO / SAIR
+        S->>DB: UPDATE / SELECT
+        S-->>C: RESULTADO / FIM_FICHA / GESTAO_OK
+    end
+
+    C->>S: CMD:SAIR
+    S-->>C: DESCONECTADO
+```
+
 ---
 
 *UTFPR — Campus Pato Branco — AD44S — 2026*
