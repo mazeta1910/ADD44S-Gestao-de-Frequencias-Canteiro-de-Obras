@@ -93,6 +93,92 @@ Após executar `PopularBancoDados`, utilize estes CPFs para login no terminal:
 - Relatórios, exportação, backup e análise de desempenho (threads)
 - Comunicação concorrente: uma thread por conexão TCP no servidor
 
+## Por que TCP (e não UDP)?
+
+O protocolo **TCP** foi escolhido porque o sistema trata **dados críticos de RH** (ponto, jornada, autenticação e persistência no PostgreSQL). Nesse cenário, a confiabilidade da comunicação importa mais do que a menor latência.
+
+| Critério | TCP (escolhido) | UDP (não adequado aqui) |
+|----------|-----------------|-------------------------|
+| Entrega | Garante que os bytes chegam, na ordem correta | Não garante entrega nem ordem |
+| Conexão | Canal persistente cliente ↔ servidor | Sem conexão; cada pacote é independente |
+| Fluxo | Controle de fluxo e retransmissão automática | Sem controle; pacotes podem se perder |
+| Uso típico | Transações, autenticação, menus interativos | Streaming, DNS, telemetria em tempo real |
+
+**Motivos específicos deste projeto:**
+
+1. **Registro de ponto não pode se perder** — uma batida de entrada ou saída perdida por UDP geraria inconsistência na folha de frequência.
+2. **Sessão autenticada** — após `AUTH:CPF`, o servidor mantém o CPF na conexão e só aceita `CMD:` na mesma sessão; TCP mantém esse canal aberto de forma confiável.
+3. **Diálogo cliente-servidor** — cada ação do menu envia um comando e espera uma resposta (`RESULTADO;...`, `FIM_FICHA`, `GESTAO_OK`). TCP é orientado a fluxo de bytes e combina com `readLine()` / `println()`.
+4. **Gestão remota interativa** — o painel administrativo (`GestaoRemotaSession`) troca dezenas de linhas de entrada e saída pelo mesmo socket; perda ou desordem de pacotes quebraria o menu.
+5. **Concorrência no servidor** — cada terminal remoto abre uma conexão TCP dedicada, atendida por uma thread (`accept()` + `new Thread(...)`), isolando as sessões sem misturar mensagens.
+
+UDP seria mais indicado para cenários em que perda ocasional de dados é aceitável (ex.: sensor de temperatura no canteiro enviando leituras a cada segundo). Para **gestão de frequência e banco centralizado**, TCP é a escolha natural.
+
+## Trechos do código (para explicação breve)
+
+### 1. Servidor — escuta e concorrência (`ServidorCentralTCP`)
+
+O servidor abre um `ServerSocket` na porta 8080 e, para cada terminal que conecta, cria uma **thread** dedicada:
+
+```java
+while (true) {
+    Socket clientSocket = serverSocket.accept();
+    new Thread(() -> processarRequisicao(clientSocket)).start();
+}
+```
+
+Assim, vários canteiros podem registrar ponto ao mesmo tempo sem bloquear uns aos outros.
+
+### 2. Protocolo de mensagens (texto por linha)
+
+A comunicação usa **strings em UTF-8**, uma mensagem por linha:
+
+| Prefixo | Exemplo | Significado |
+|---------|---------|-------------|
+| `AUTH:` | `AUTH:11111111111` | Cliente informa o CPF para login |
+| `CMD:` | `CMD:PONTO_ENTRADA` | Comando após autenticação |
+| Resposta | `AUTH_SUCCESS;ADMIN;Nome` | Servidor confirma perfil e nome |
+| Resposta | `RESULTADO;Entrada registrada as 08:00` | Resultado de um comando de ponto |
+
+No servidor, o loop principal lê linha a linha e roteia por prefixo:
+
+```java
+while ((mensagem = in.readLine()) != null) {
+    if (mensagem.startsWith("AUTH:")) { /* valida CPF no banco */ }
+    else if (mensagem.startsWith("CMD:") && cpfAutenticado != null) { /* executa comando */ }
+}
+```
+
+### 3. Cliente — conexão e autenticação (`TerminalCanteiroClienteTCP`)
+
+O terminal remoto abre o socket, envia o CPF e só entra no menu se o servidor responder `AUTH_SUCCESS`:
+
+```java
+Socket socket = new Socket(ipServidor, portaServidor);
+out.println("AUTH:" + cpf);
+String respostaAuth = in.readLine();
+```
+
+O IP e a porta vêm dos argumentos (`TerminalCanteiroClienteTCP 192.168.1.10 8080`) ou da classe `NetworkConfig`.
+
+### 4. Registro de ponto no servidor
+
+Cada comando (`PONTO_ENTRADA`, `PONTO_INTERVALO`, etc.) atualiza o `RegistroPonto` do dia no PostgreSQL via JPA e devolve confirmação ao cliente. O estado da jornada (`GET_ESTADO_JORNADA`) define quais opções o menu exibe no terminal.
+
+### 5. Gestão remota (`GestaoRemotaSession`)
+
+Quando o administrador escolhe a opção 7, o **processamento roda no servidor** (onde está o PostgreSQL), mas a **interface aparece no PC do canteiro**:
+
+- Cliente envia `CMD:GESTAO_INICIAR`
+- Servidor executa `MenuConsoleSimplificado` redirecionando `System.out` para o socket
+- Entrada do teclado no cliente é reenviada pelo TCP ao servidor
+
+Isso evita expor o banco de dados na rede local — apenas o servidor central precisa do PostgreSQL.
+
+### 6. Configuração de rede (`NetworkConfig`)
+
+Centraliza IP padrão (`127.0.0.1`), porta (`8080`), codificação UTF-8 nos streams e listagem dos IPs locais que o servidor exibe ao iniciar, facilitando a conexão de outros PCs na LAN.
+
 ---
 
 *UTFPR — Campus Pato Branco — AD44S — 2026*
