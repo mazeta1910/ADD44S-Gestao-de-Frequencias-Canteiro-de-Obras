@@ -126,25 +126,40 @@ sequenceDiagram
 
 ```java
 while (true) {
-    Socket clientSocket = serverSocket.accept();  // espera conexão
-    new Thread(() -> processarRequisicao(clientSocket)).start();  // atende em paralelo
+    // Fica parado aqui até algum terminal do canteiro tentar conectar
+    Socket clientSocket = serverSocket.accept();
+
+    // Cria uma thread só para esse cliente — assim outro terminal
+    // pode conectar sem ficar esperando o primeiro terminar de bater ponto
+    new Thread(() -> processarRequisicao(clientSocket)).start();
 }
 ```
 
 **Terminal conecta e faz login** (`TerminalCanteiroClienteTCP.java`):
 
 ```java
-Socket socket = new Socket(ipServidor, portaServidor);  // conecta ao servidor
-out.println("AUTH:" + cpf);                              // envia CPF
-String respostaAuth = in.readLine();                     // espera resposta
+// Abre a conexão TCP com o servidor central (handshake pela rede)
+Socket socket = new Socket(ipServidor, portaServidor);
+
+// Envia o CPF para o servidor validar no banco de dados
+out.println("AUTH:" + cpf);
+
+// Fica aguardando a resposta: AUTH_SUCCESS (liberado) ou AUTH_FAILED (negado)
+String respostaAuth = in.readLine();
 ```
 
 **Servidor separa login de comandos** (`ServidorCentralTCP.java`):
 
 ```java
+// Lê mensagens do terminal, uma linha por vez, enquanto a conexão estiver aberta
 while ((mensagem = in.readLine()) != null) {
-    if (mensagem.startsWith("AUTH:")) { /* confere CPF no banco */ }
-    else if (mensagem.startsWith("CMD:")) { /* executa o que o usuário pediu */ }
+
+    // Primeiro passo: autenticação — busca o CPF no PostgreSQL
+    if (mensagem.startsWith("AUTH:")) { /* valida CPF e guarda na sessão */ }
+
+    // Depois do login: comandos de ponto, ficha, gestão etc.
+    // Só aceita CMD se o usuário já tiver se autenticado (cpfAutenticado != null)
+    else if (mensagem.startsWith("CMD:")) { /* grava no banco e devolve RESULTADO */ }
 }
 ```
 
