@@ -40,7 +40,27 @@ O trabalhador usa o **PC do canteiro** (cliente), digita o CPF e escolhe as opç
 Trabalhador → PC do canteiro → TCP → Servidor central → PostgreSQL
 ```
 
-**Tecnologias:** Java 21 · Sockets TCP · JPA/Hibernate · PostgreSQL · Maven
+**Tecnologias:** Java 21 · Sockets TCP · JPA/Hibernate · PostgreSQL · Maven · gRPC (monitor corporativo)
+
+---
+
+## 2.1 Monitor corporativo (gRPC)
+
+Complemento ao sistema de ponto: painel de gestão dos canteiros via **gRPC na porta 50052**.
+
+| Canal | Porta | Função |
+|-------|-------|--------|
+| TCP | 8080 | Registro de ponto dos trabalhadores |
+| gRPC | 50052 | Status, equipe, materiais, finanças e compras |
+
+```powershell
+cd monitor-grpc
+.\gradlew.bat installDist
+.\build\install\monitor-grpc\bin\canteiro-server.bat   # Terminal 1
+.\build\install\monitor-grpc\bin\canteiro-client.bat   # Terminal 2
+```
+
+Detalhes em [monitor-grpc/README.md](monitor-grpc/README.md).
 
 ---
 

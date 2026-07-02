@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.grpc.examples.canteiro";
+option java_outer_classname = "CanteiroProto";
+
+package canteiro;
+
+service CanteiroService {
+  rpc ListCanteiros (ListarCanteirosRequest) returns (ListarCanteirosReply) {}
+  rpc GetStatus (StatusRequest) returns (StatusReply) {}
+  rpc ListFuncionarios (ListarFuncionariosRequest) returns (ListarFuncionariosReply) {}
+  rpc ListMateriais (ListarMateriaisRequest) returns (ListarMateriaisReply) {}
+  rpc ListFinancas (ListarFinancasRequest) returns (ListarFinancasReply) {}
+  rpc ListCompras (ListarComprasRequest) returns (ListarComprasReply) {}
+}
+
+message ListarCanteirosRequest {}
+
+message CanteiroResumo {
+  int32 id = 1;
+  string nome = 2;
+  string localizacao = 3;
+}
+
+message ListarCanteirosReply {
+  repeated CanteiroResumo canteiros = 1;
+}
+
+message StatusRequest {
+  int32 canteiro_id = 1;
+}
+
+message StatusReply {
+  bool found = 1;
+  string nome = 2;
+  string localizacao = 3;
+  string data_consulta = 4;
+  string horario_consulta = 5;
+  bool aberto = 6;
+  string horario_abertura = 7;
+  string horario_fechamento = 8;
+  string situacao = 9;
+  int32 pedreiros_cadastrados = 10;
+  int32 pedreiros_no_local = 11;
+  int32 pedreiros_em_intervalo = 12;
+  int32 engenheiros_cadastrados = 13;
+  int32 engenheiros_no_local = 14;
+  double temperatura_celsius = 15;
+  double umidade_percent = 16;
+  double percentual_conclusao = 17;
+  string mensagem = 18;
+}
+
+// tipo: TODOS, ENGENHEIRO, PEDREIRO, SERVENTE, MESTRE_DE_OBRAS
+// canteiro_id: 0 = todos os canteiros
+message ListarFuncionariosRequest {
+  string tipo = 1;
+  int32 canteiro_id = 2;
+}
+
+message FuncionarioInfo {
+  int32 id = 1;
+  string nome = 2;
+  string tipo = 3;
+  string funcao = 4;
+  int32 canteiro_id = 5;
+  string canteiro_nome = 6;
+  bool presente_no_local = 7;
+}
+
+message ListarFuncionariosReply {
+  repeated FuncionarioInfo funcionarios = 1;
+}
+
+// canteiro_id: 0 = todos | apenas_baixo: somente estoque critico/baixo
+message ListarMateriaisRequest {
+  int32 canteiro_id = 1;
+  bool apenas_baixo = 2;
+}
+
+message MaterialInfo {
+  int32 canteiro_id = 1;
+  string canteiro_nome = 2;
+  string nome = 3;
+  string unidade = 4;
+  double quantidade = 5;
+  double quantidade_minima = 6;
+  string situacao = 7;
+}
+
+message ListarMateriaisReply {
+  repeated MaterialInfo materiais = 1;
+}
+
+// canteiro_id: 0 = todos | apenas_alerta: somente obras com atencao/critico
+message ListarFinancasRequest {
+  int32 canteiro_id = 1;
+  bool apenas_alerta = 2;
+}
+
+message FinancaInfo {
+  int32 canteiro_id = 1;
+  string canteiro_nome = 2;
+  double orcamento_total = 3;
+  double gasto_acumulado = 4;
+  double gasto_mes = 5;
+  double saldo_disponivel = 6;
+  double percentual_utilizado = 7;
+  double folha_pagamento_mes = 8;
+  double custo_materiais_mes = 9;
+  string situacao = 10;
+  string mensagem = 11;
+}
+
+message ListarFinancasReply {
+  repeated FinancaInfo registros = 1;
+  double total_orcamento = 2;
+  double total_gasto = 3;
+  double total_saldo = 4;
+}
+
+// status: TODOS, PENDENTE, APROVADO, ENTREGUE, CANCELADO
+message ListarComprasRequest {
+  int32 canteiro_id = 1;
+  string status = 2;
+}
+
+message CompraInfo {
+  int32 id = 1;
+  int32 canteiro_id = 2;
+  string canteiro_nome = 3;
+  string descricao = 4;
+  string fornecedor = 5;
+  string quantidade = 6;
+  double valor = 7;
+  string data_pedido = 8;
+  string status = 9;
+  string solicitante = 10;
+}
+
+message ListarComprasReply {
+  repeated CompraInfo compras = 1;
+  double valor_total_listado = 2;
+}

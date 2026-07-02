@@ -4,6 +4,13 @@ target/
 !**/src/test/**/target/
 .kotlin
 
+# Clone local do repositorio grpc-java (nao versionar)
+grpc-java/
+
+# Gradle do monitor gRPC
+monitor-grpc/.gradle/
+monitor-grpc/build/
+
 ### IntelliJ IDEA ###
 .idea/modules.xml
 .idea/jarRepositories.xml
