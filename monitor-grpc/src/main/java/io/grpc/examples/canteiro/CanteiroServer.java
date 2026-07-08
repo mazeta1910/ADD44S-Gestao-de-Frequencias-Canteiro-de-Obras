@@ -17,6 +17,7 @@ public class CanteiroServer {
 
   private Server server;
 
+  // Inicia o servidor na porta 50052 e registra encerramento ao fechar a JVM.
   private void start() throws IOException {
     int port = 50052;
     ExecutorService executor = Executors.newFixedThreadPool(4);
@@ -45,27 +46,32 @@ public class CanteiroServer {
     });
   }
 
+  // Encerra o servidor de forma ordenada, aguardando ate 30 segundos.
   private void stop() throws InterruptedException {
     if (server != null) {
       server.shutdown().awaitTermination(30, TimeUnit.SECONDS);
     }
   }
 
+  // Mantem o processo principal vivo enquanto o servidor estiver ativo.
   private void blockUntilShutdown() throws InterruptedException {
     if (server != null) {
       server.awaitTermination();
     }
   }
 
+  // Ponto de entrada: sobe o servidor e bloqueia ate ser encerrado.
   public static void main(String[] args) throws IOException, InterruptedException {
     CanteiroServer server = new CanteiroServer();
     server.start();
     server.blockUntilShutdown();
   }
 
+  // Implementacao dos RPCs definidos em canteiro.proto.
   private static final class CanteiroServiceImpl extends CanteiroServiceGrpc.CanteiroServiceImplBase {
     private final CanteiroRepository repository = new CanteiroRepository();
 
+    // RPC: retorna a lista de canteiros cadastrados em memoria.
     @Override
     public void listCanteiros(
         ListarCanteirosRequest request, StreamObserver<ListarCanteirosReply> responseObserver) {
@@ -73,12 +79,14 @@ public class CanteiroServer {
       responseObserver.onCompleted();
     }
 
+    // RPC: monta o status operacional do canteiro no momento da consulta.
     @Override
     public void getStatus(StatusRequest request, StreamObserver<StatusReply> responseObserver) {
       responseObserver.onNext(repository.montarStatus(request.getCanteiroId(), LocalDateTime.now()));
       responseObserver.onCompleted();
     }
 
+    // RPC: lista funcionarios filtrados por tipo e/ou canteiro.
     @Override
     public void listFuncionarios(
         ListarFuncionariosRequest request, StreamObserver<ListarFuncionariosReply> responseObserver) {
@@ -87,6 +95,7 @@ public class CanteiroServer {
       responseObserver.onCompleted();
     }
 
+    // RPC: lista materiais em estoque, com opcao de filtrar estoque baixo.
     @Override
     public void listMateriais(
         ListarMateriaisRequest request, StreamObserver<ListarMateriaisReply> responseObserver) {
@@ -95,6 +104,7 @@ public class CanteiroServer {
       responseObserver.onCompleted();
     }
 
+    // RPC: retorna dados financeiros do canteiro (orcamento, gastos, saldo).
     @Override
     public void listFinancas(
         ListarFinancasRequest request, StreamObserver<ListarFinancasReply> responseObserver) {
@@ -103,6 +113,7 @@ public class CanteiroServer {
       responseObserver.onCompleted();
     }
 
+    // RPC: lista pedidos de compra filtrados por canteiro e status.
     @Override
     public void listCompras(
         ListarComprasRequest request, StreamObserver<ListarComprasReply> responseObserver) {

@@ -40,6 +40,7 @@ final class CanteiroRepository {
   private final List<FinancaBase> financas = criarFinancas();
   private final List<CompraBase> compras = criarCompras();
 
+  // Retorna a lista de todos os canteiros cadastrados em memoria.
   ListarCanteirosReply listarCanteiros() {
     ListarCanteirosReply.Builder builder = ListarCanteirosReply.newBuilder();
     canteiros.entrySet().stream()
@@ -52,6 +53,7 @@ final class CanteiroRepository {
     return builder.build();
   }
 
+  // Monta o painel de status operacional de um canteiro com base no horario atual.
   StatusReply montarStatus(int canteiroId, LocalDateTime agora) {
     CanteiroBase base = canteiros.get(canteiroId);
     if (base == null) {
@@ -84,6 +86,7 @@ final class CanteiroRepository {
         .build();
   }
 
+  // Lista funcionarios filtrados por tipo e/ou canteiro, indicando presenca no local.
   ListarFuncionariosReply listarFuncionarios(String tipo, int canteiroId, LocalDateTime agora) {
     LocalTime hora = agora.toLocalTime();
     boolean aberto = estaAberto(hora);
@@ -112,6 +115,7 @@ final class CanteiroRepository {
     return builder.build();
   }
 
+  // Lista materiais em estoque, opcionalmente filtrando por canteiro ou nivel baixo/critico.
   ListarMateriaisReply listarMateriais(int canteiroId, boolean apenasBaixo) {
     ListarMateriaisReply.Builder builder = ListarMateriaisReply.newBuilder();
     for (MaterialBase m : materiais) {
@@ -136,6 +140,7 @@ final class CanteiroRepository {
     return builder.build();
   }
 
+  // Monta o resumo financeiro por obra, com totais e filtro opcional de alertas.
   ListarFinancasReply listarFinancas(int canteiroId, boolean apenasAlerta) {
     ListarFinancasReply.Builder builder = ListarFinancasReply.newBuilder();
     double totalOrc = 0;
@@ -180,6 +185,7 @@ final class CanteiroRepository {
         .build();
   }
 
+  // Lista pedidos de compra filtrados por canteiro e/ou status do pedido.
   ListarComprasReply listarCompras(int canteiroId, String status) {
     String statusFiltro = status == null || status.isEmpty()
         ? STATUS_TODOS : status.toUpperCase(Locale.ROOT);
@@ -213,17 +219,20 @@ final class CanteiroRepository {
     return builder.setValorTotalListado(valorTotal).build();
   }
 
+  // Retorna o nome de um canteiro pelo ID, ou "Desconhecido" se nao existir.
   String nomeCanteiro(int id) {
     CanteiroBase c = canteiros.get(id);
     return c != null ? c.nome : "Desconhecido";
   }
 
+  // Conta quantos funcionarios de um tipo estao cadastrados em um canteiro.
   private int contarPorTipo(int canteiroId, String tipo) {
     return (int) funcionarios.stream()
         .filter(f -> f.canteiroId == canteiroId && f.tipo.equals(tipo))
         .count();
   }
 
+  // Conta quantos funcionarios de um tipo estao presentes no canteiro neste momento.
   private int calcularPresentes(int canteiroId, String tipo, LocalTime hora, boolean aberto, String situacao) {
     return (int) funcionarios.stream()
         .filter(f -> f.canteiroId == canteiroId && f.tipo.equals(tipo))
@@ -231,6 +240,7 @@ final class CanteiroRepository {
         .count();
   }
 
+  // Estima quantos pedreiros estao em intervalo de almoco no horario atual.
   private int calcularEmIntervalo(int canteiroId, String situacao) {
     if (!"INTERVALO_ALMOCO".equals(situacao)) {
       return 0;
@@ -239,6 +249,7 @@ final class CanteiroRepository {
     return Math.max(0, (int) Math.round(pedreiros * 0.50));
   }
 
+  // Simula se um funcionario esta no canteiro conforme horario, tipo e situacao da obra.
   private boolean calcularPresente(FuncionarioBase f, LocalTime hora, boolean aberto, String situacao) {
     if (!aberto) {
       return false;
@@ -252,6 +263,7 @@ final class CanteiroRepository {
     return f.id % 5 != 0;
   }
 
+  // Gera a mensagem descritiva do status operacional exibida ao usuario.
   private String montarMensagem(boolean aberto, String situacao, int canteiroId, LocalTime hora) {
     if (!aberto) {
       return "Canteiro fora do horario de operacao. Nenhuma equipe no local.";
@@ -264,10 +276,12 @@ final class CanteiroRepository {
     return "Operacao em andamento com " + pedreiros + " de " + total + " pedreiros no local.";
   }
 
+  // Verifica se o canteiro esta dentro do horario de funcionamento (07h-18h).
   private static boolean estaAberto(LocalTime hora) {
     return !hora.isBefore(HORA_ABERTURA) && hora.isBefore(HORA_FECHAMENTO);
   }
 
+  // Define a fase do dia: fechado, almoco, abertura, encerramento ou operacao normal.
   private static String resolverSituacao(LocalTime hora, boolean aberto) {
     if (!aberto) {
       return "FECHADO";
@@ -284,6 +298,7 @@ final class CanteiroRepository {
     return "OPERACAO_NORMAL";
   }
 
+  // Classifica o estoque como OK, BAIXO ou CRITICO comparando quantidade com o minimo.
   private static String resolverSituacaoEstoque(double qtd, double min) {
     if (qtd <= min * 0.5) {
       return "CRITICO";
@@ -294,6 +309,7 @@ final class CanteiroRepository {
     return "OK";
   }
 
+  // Classifica a situacao financeira da obra conforme percentual do orcamento utilizado.
   private static String resolverSituacaoFinanceira(FinancaBase f) {
     double pct = (f.gastoAcumulado / f.orcamentoTotal) * 100.0;
     if (pct >= 95.0) {
@@ -305,6 +321,7 @@ final class CanteiroRepository {
     return "OK";
   }
 
+  // Monta o texto de alerta ou confirmacao exibido no painel financeiro.
   private static String montarMensagemFinanceira(String situacao, double pct, double saldo) {
     if ("CRITICO".equals(situacao)) {
       return "Orcamento quase esgotado. Revisar custos com urgencia.";
@@ -315,21 +332,25 @@ final class CanteiroRepository {
     return "Obra dentro do orcamento (" + String.format(Locale.US, "%.1f", pct) + "% utilizado).";
   }
 
+  // Simula a temperatura ambiente variando ao longo do dia a partir de uma base.
   private static double calcularTemperatura(double tempBase, LocalTime hora) {
     double h = hora.getHour() + hora.getMinute() / 60.0;
     return Math.round((tempBase + 4.0 * Math.sin((h - 6.0) * Math.PI / 12.0)) * 10.0) / 10.0;
   }
 
+  // Simula a umidade relativa variando ao longo do dia.
   private static double calcularUmidade(LocalTime hora) {
     double h = hora.getHour() + hora.getMinute() / 60.0;
     return Math.round((65.0 - 15.0 * Math.sin((h - 6.0) * Math.PI / 12.0)) * 10.0) / 10.0;
   }
 
+  // Calcula o percentual de conclusao da obra com pequena variacao diaria simulada.
   private static double calcularConclusao(double base, LocalDateTime agora) {
     double acrescimo = (agora.getDayOfYear() % 30) * 0.05;
     return Math.min(99.9, Math.round((base + acrescimo) * 10.0) / 10.0);
   }
 
+  // Inicializa os cinco canteiros de exemplo com nome, local e parametros base.
   private static Map<Integer, CanteiroBase> criarCanteiros() {
     Map<Integer, CanteiroBase> dados = new HashMap<>();
     dados.put(1, new CanteiroBase("Obra Residencial Vila Nova", "Rua das Flores, 123 - Curitiba/PR", 24.0, 67.0));
@@ -340,6 +361,7 @@ final class CanteiroRepository {
     return dados;
   }
 
+  // Cria a lista fixa de engenheiros, mestres, pedreiros e serventes por canteiro.
   private static List<FuncionarioBase> criarFuncionarios() {
     List<FuncionarioBase> lista = new ArrayList<>();
     int id = 1;
@@ -384,6 +406,7 @@ final class CanteiroRepository {
     return Collections.unmodifiableList(lista);
   }
 
+  // Popula o catalogo de materiais de cada canteiro com quantidades de exemplo.
   private static List<MaterialBase> criarMateriais() {
     List<MaterialBase> lista = new ArrayList<>();
     adicionarMateriaisCanteiro(lista, 1,
@@ -418,6 +441,7 @@ final class CanteiroRepository {
     return Collections.unmodifiableList(lista);
   }
 
+  // Define os dados financeiros simulados (orcamento, gastos e folha) de cada obra.
   private static List<FinancaBase> criarFinancas() {
     return Arrays.asList(
         new FinancaBase(1, 2_800_000, 1_876_000, 142_000, 98_000, 44_000),
@@ -427,6 +451,7 @@ final class CanteiroRepository {
         new FinancaBase(5, 680_000, 554_000, 48_000, 31_000, 17_000));
   }
 
+  // Cria os pedidos de compra de exemplo com diferentes status e fornecedores.
   private static List<CompraBase> criarCompras() {
     List<CompraBase> lista = new ArrayList<>();
     int id = 1;
@@ -457,10 +482,12 @@ final class CanteiroRepository {
     return Collections.unmodifiableList(lista);
   }
 
+  // Adiciona um conjunto de materiais a lista global do repositorio.
   private static void adicionarMateriaisCanteiro(List<MaterialBase> lista, int canteiroId, MaterialBase... itens) {
     lista.addAll(Arrays.asList(itens));
   }
 
+  // Atalho para instanciar um registro de material com quantidade e minimo.
   private static MaterialBase mat(int canteiroId, String nome, String unidade, double qtd, double min) {
     return new MaterialBase(canteiroId, nome, unidade, qtd, min);
   }
@@ -471,6 +498,7 @@ final class CanteiroRepository {
     private final double tempBase;
     private final double conclusaoBase;
 
+    // Armazena os dados fixos de identificacao e parametros de um canteiro.
     private CanteiroBase(String nome, String localizacao, double tempBase, double conclusaoBase) {
       this.nome = nome;
       this.localizacao = localizacao;
@@ -486,6 +514,7 @@ final class CanteiroRepository {
     private final String funcao;
     private final int canteiroId;
 
+    // Armazena os dados de um funcionario vinculado a um canteiro.
     private FuncionarioBase(int id, String nome, String tipo, String funcao, int canteiroId) {
       this.id = id;
       this.nome = nome;
@@ -502,6 +531,7 @@ final class CanteiroRepository {
     private final double quantidade;
     private final double quantidadeMinima;
 
+    // Armazena um item de estoque com quantidade atual e nivel minimo de alerta.
     private MaterialBase(int canteiroId, String nome, String unidade, double quantidade, double quantidadeMinima) {
       this.canteiroId = canteiroId;
       this.nome = nome;
@@ -519,6 +549,7 @@ final class CanteiroRepository {
     private final double folhaMes;
     private final double materiaisMes;
 
+    // Armazena orcamento, gastos acumulados e custos mensais de uma obra.
     private FinancaBase(int canteiroId, double orcamentoTotal, double gastoAcumulado,
         double gastoMes, double folhaMes, double materiaisMes) {
       this.canteiroId = canteiroId;
@@ -541,6 +572,7 @@ final class CanteiroRepository {
     private final String status;
     private final String solicitante;
 
+    // Armazena os dados de um pedido de compra feito para um canteiro.
     private CompraBase(int id, int canteiroId, String descricao, String fornecedor,
         String quantidade, double valor, String dataPedido, String status, String solicitante) {
       this.id = id;

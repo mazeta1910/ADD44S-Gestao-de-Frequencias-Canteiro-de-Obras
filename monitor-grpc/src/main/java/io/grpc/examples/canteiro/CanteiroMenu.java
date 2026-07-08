@@ -16,11 +16,13 @@ final class CanteiroMenu {
   private final CanteiroServiceGrpc.CanteiroServiceBlockingStub stub;
   private final Scanner scanner;
 
+  // Recebe o stub gRPC e o leitor de entrada do teclado.
   CanteiroMenu(CanteiroServiceGrpc.CanteiroServiceBlockingStub stub, Scanner scanner) {
     this.stub = stub;
     this.scanner = scanner;
   }
 
+  // Exibe o menu principal e repete ate o usuario escolher sair (0).
   void executar() {
     System.out.println();
     System.out.println("========================================");
@@ -66,6 +68,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Submenu: listar canteiros ou consultar status operacional.
   private void menuCanteiros() {
     boolean voltar = false;
     while (!voltar) {
@@ -95,6 +98,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Submenu: consultas de funcionarios por tipo, canteiro ou engenheiros agrupados.
   private void menuFuncionarios() {
     boolean voltar = false;
     while (!voltar) {
@@ -144,6 +148,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Submenu: estoque de materiais geral, por canteiro ou com alertas.
   private void menuMateriais() {
     boolean voltar = false;
     while (!voltar) {
@@ -177,6 +182,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Submenu: resumo financeiro geral, por canteiro ou obras com alerta.
   private void menuFinancas() {
     boolean voltar = false;
     while (!voltar) {
@@ -210,6 +216,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Submenu: pedidos de compra por status ou por canteiro.
   private void menuCompras() {
     boolean voltar = false;
     while (!voltar) {
@@ -251,6 +258,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Chama o servidor e imprime o painel financeiro formatado.
   private void exibirFinancas(int canteiroId, boolean apenasAlerta) {
     try {
       ListarFinancasReply resposta = stub.listFinancas(ListarFinancasRequest.newBuilder()
@@ -292,6 +300,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Chama o servidor e imprime a lista de pedidos de compra.
   private void exibirCompras(int canteiroId, String status) {
     try {
       ListarComprasReply resposta = stub.listCompras(ListarComprasRequest.newBuilder()
@@ -324,6 +333,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Consulta e exibe todos os canteiros cadastrados no servidor.
   private void exibirListaCanteiros() {
     try {
       ListarCanteirosReply lista = stub.listCanteiros(ListarCanteirosRequest.getDefaultInstance());
@@ -338,6 +348,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Consulta e exibe o status em tempo real de um canteiro especifico.
   private void exibirStatus(int canteiroId) {
     try {
       StatusReply r = stub.getStatus(StatusRequest.newBuilder().setCanteiroId(canteiroId).build());
@@ -371,6 +382,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Agrupa engenheiros por canteiro e mostra quem esta presente no local.
   private void exibirEngenheirosPorCanteiro() {
     try {
       ListarFuncionariosReply resposta = stub.listFuncionarios(ListarFuncionariosRequest.newBuilder()
@@ -407,6 +419,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Lista funcionarios conforme o tipo e o canteiro informados.
   private void exibirFuncionarios(String tipo, int canteiroId) {
     try {
       ListarFuncionariosReply resposta = stub.listFuncionarios(ListarFuncionariosRequest.newBuilder()
@@ -432,6 +445,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Lista materiais em estoque, opcionalmente apenas itens com nivel baixo/critico.
   private void exibirMateriais(int canteiroId, boolean apenasBaixo) {
     try {
       ListarMateriaisReply resposta = stub.listMateriais(ListarMateriaisRequest.newBuilder()
@@ -464,6 +478,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Mostra a lista de canteiros e pede ao usuario qual ID deseja consultar.
   private int pedirCanteiroId() {
     exibirListaCanteiros();
     System.out.print("ID do canteiro (0 = cancelar): ");
@@ -474,6 +489,7 @@ final class CanteiroMenu {
     return id;
   }
 
+  // Le um numero inteiro do teclado; retorna -1 se a entrada for invalida.
   private int lerInteiro() {
     if (!scanner.hasNextInt()) {
       scanner.nextLine();
@@ -484,6 +500,7 @@ final class CanteiroMenu {
     return valor;
   }
 
+  // Converte o codigo do tipo de funcionario em titulo legivel para exibicao.
   private static String tituloTipo(String tipo) {
     switch (tipo) {
       case CanteiroRepository.TIPO_ENGENHEIRO:
@@ -499,6 +516,7 @@ final class CanteiroMenu {
     }
   }
 
+  // Converte o codigo da situacao operacional em texto amigavel.
   private static String formatarSituacao(String situacao) {
     switch (situacao) {
       case "OPERACAO_NORMAL":

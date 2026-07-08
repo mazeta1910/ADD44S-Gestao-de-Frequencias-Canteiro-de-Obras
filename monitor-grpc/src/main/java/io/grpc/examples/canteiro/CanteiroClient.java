@@ -13,11 +13,13 @@ import java.util.logging.Logger;
  */
 public class CanteiroClient {
 
+  // Oculta mensagens de debug do gRPC no terminal (ex.: Epoll, Netty).
   private static void silenciarLogsGrpc() {
     Logger.getLogger("io.grpc").setLevel(Level.WARNING);
     Logger.getLogger("io.grpc.netty").setLevel(Level.WARNING);
   }
 
+  // Conecta ao servidor gRPC e abre o menu interativo ate o usuario sair.
   public static void main(String[] args) throws Exception {
     silenciarLogsGrpc();
 

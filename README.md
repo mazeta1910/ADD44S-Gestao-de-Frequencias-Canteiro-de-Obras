@@ -288,34 +288,142 @@ while ((mensagem = in.readLine()) != null) {
 
 # Monitor corporativo — `monitor-grpc`
 
-Módulo complementar ao sistema de ponto. Expõe um **painel corporativo** via **gRPC na porta 50052** para acompanhar a operação das obras — equipe, estoque, finanças e compras. Útil para engenheiros e gestores que precisam de visão ampla do canteiro.
+Módulo complementar ao sistema de ponto. Expõe um **painel corporativo** via **gRPC na porta 50052** para acompanhar a operação das obras — equipe, estoque, finanças e compras. Útil para engenheiros e gestores que precisam de visão ampla do canteiro, sem depender do fluxo de registro de ponto dos trabalhadores.
 
-## Arquitetura
+## 1. Sobre o módulo
+
+Enquanto o sistema TCP cuida do **ponto individual** (entrada, saída, ficha do dia), o monitor gRPC responde perguntas de **gestão**:
+
+- O canteiro está aberto agora? Quantos pedreiros estão no local?
+- Quais engenheiros estão presentes em cada obra?
+- Algum material está com estoque crítico?
+- A obra está dentro do orçamento?
+- Há compras pendentes de aprovação?
+
+Os dados são **simulados em memória** (`CanteiroRepository`) — cinco canteiros de exemplo com equipe, materiais, finanças e pedidos de compra. Não há integração com o PostgreSQL do sistema principal; o objetivo é demonstrar **comunicação gRPC** com contrato tipado (`.proto`).
+
+**Tecnologias:** Java 8 · gRPC 1.81 · Protocol Buffers 3.25 · Gradle · Netty (transporte)
+
+---
+
+## 2. Arquitetura
 
 ```
 ┌─────────────────────┐      gRPC :50052      ┌─────────────────────┐
 │   CanteiroClient    │ ◄──────────────────► │   CanteiroServer    │
-│  (painel consulta)  │                      │  (dados em memoria) │
-└─────────────────────┘                      └─────────────────────┘
+│  (painel consulta)  │   HTTP/2 + Protobuf   │  (dados em memoria) │
+└──────────┬──────────┘                      └──────────┬──────────┘
+           │                                            │
+    CanteiroMenu.java                          CanteiroServiceImpl
+    (menus no terminal)                        (6 RPCs → Repository)
 ```
 
-| Canal | Porta | Papel |
-|-------|-------|-------|
-| TCP (Maven) | 8080 | Ponto dos trabalhadores → PostgreSQL |
-| gRPC (Gradle) | 50052 | Monitoramento corporativo → memória |
+| Canal | Porta | Build | Papel |
+|-------|-------|-------|-------|
+| TCP (Maven) | 8080 | `pom.xml` | Ponto dos trabalhadores → PostgreSQL |
+| gRPC (Gradle) | 50052 | `monitor-grpc/` | Monitoramento corporativo → memória |
 
-O monitor é **independente** do banco PostgreSQL: usa dados de demonstração em memória.
+**Quem conecta em quem?**
 
-## Por que gRPC?
+O **cliente** (`CanteiroClient`) abre o canal gRPC e chama os RPCs sob demanda. O **servidor** (`CanteiroServer`) fica escutando na porta 50052 e responde cada consulta com mensagens Protobuf — não há sessão contínua como no TCP de ponto.
+
+```
+Gestor → CanteiroClient → gRPC → CanteiroServer → CanteiroRepository (memória)
+```
+
+---
+
+## 3. Por que gRPC?
 
 | Aspecto | TCP (ponto) | gRPC (monitor) |
 |---------|-------------|----------------|
-| Dados | Comandos em texto (`AUTH:`, `CMD:`) | Mensagens tipadas (`.proto`) |
-| Uso | Sessão contínua do trabalhador | Consultas sob demanda |
-| Conteúdo | Ações sequenciais de ponto | Estruturas com vários campos |
-| Persistência | PostgreSQL | Memória (demo) |
+| Formato | Texto linha a linha (`AUTH:`, `CMD:`) | Mensagens binárias tipadas (`.proto`) |
+| Contrato | Convenção manual entre cliente e servidor | Arquivo `canteiro.proto` gera stubs Java |
+| Uso | Sessão contínua do trabalhador | Consultas pontuais (request → response) |
+| Conteúdo | Comandos sequenciais de ponto | Estruturas com dezenas de campos |
+| Persistência | PostgreSQL | Memória (demonstração) |
+| Transporte | TCP puro (Sockets Java) | HTTP/2 sobre TCP (Netty) |
 
-## Menu principal do cliente
+gRPC é adequado aqui porque cada consulta retorna **objetos estruturados** (status com temperatura, umidade, equipe, etc.) — serializar isso em texto seria frágil; o `.proto` define o contrato de forma explícita.
+
+---
+
+## 4. Estrutura do projeto
+
+```
+monitor-grpc/
+├── build.gradle                    # Gradle + plugin protobuf
+├── src/main/proto/canteiro.proto  # Contrato do serviço
+└── src/main/java/io/grpc/examples/canteiro/
+    ├── CanteiroServer.java         # Servidor (porta 50052)
+    ├── CanteiroClient.java         # Entrada do cliente
+    ├── CanteiroMenu.java           # Menus interativos
+    └── CanteiroRepository.java     # Dados simulados em memória
+```
+
+O Gradle compila o `.proto` e gera automaticamente as classes `CanteiroServiceGrpc`, `StatusRequest`, `StatusReply`, etc.
+
+---
+
+## 5. Contrato gRPC — `canteiro.proto`
+
+Serviço único `CanteiroService` com **6 RPCs** (todos *unary*: uma requisição, uma resposta):
+
+| RPC | Request | Response | Descrição |
+|-----|---------|----------|-----------|
+| `ListCanteiros` | vazio | lista de `CanteiroResumo` | IDs, nomes e localização das obras |
+| `GetStatus` | `canteiro_id` | `StatusReply` | Painel operacional em tempo real |
+| `ListFuncionarios` | `tipo`, `canteiro_id` | lista de `FuncionarioInfo` | Equipe filtrada por função e obra |
+| `ListMateriais` | `canteiro_id`, `apenas_baixo` | lista de `MaterialInfo` | Estoque e alertas |
+| `ListFinancas` | `canteiro_id`, `apenas_alerta` | `FinancaInfo` + totais | Orçamento, gastos e saldo |
+| `ListCompras` | `canteiro_id`, `status` | lista de `CompraInfo` | Pedidos de compra |
+
+**Filtros comuns:** `canteiro_id = 0` significa *todos os canteiros*.
+
+**Valores de filtro usados no cliente:**
+
+| Campo | Valores |
+|-------|---------|
+| `tipo` (funcionários) | `TODOS`, `ENGENHEIRO`, `PEDREIRO`, `SERVENTE`, `MESTRE_DE_OBRAS` |
+| `status` (compras) | `TODOS`, `PENDENTE`, `APROVADO`, `ENTREGUE`, `CANCELADO` |
+| `situacao` (estoque) | `OK`, `BAIXO`, `CRITICO` |
+| `situacao` (finanças) | `OK`, `ATENCAO`, `CRITICO` |
+
+---
+
+## 6. Dados simulados
+
+O `CanteiroRepository` mantém **5 canteiros** em memória:
+
+| ID | Obra | Local |
+|----|------|-------|
+| 1 | Obra Residencial Vila Nova | Curitiba/PR |
+| 2 | Construção Comercial Centro | Curitiba/PR |
+| 3 | Ponte Rodoviária BR-277 | Pato Branco/PR |
+| 4 | Condomínio Residencial Horizonte | Pato Branco/PR |
+| 5 | Reforma Escola Municipal | Pato Branco/PR |
+
+Além dos canteiros, há cadastros de engenheiros, mestres de obra, pedreiros, serventes, materiais por obra, indicadores financeiros e pedidos de compra com diferentes status.
+
+**Status operacional dinâmico** — o `GetStatus` calcula em tempo real com base no horário da consulta:
+
+| Horário | Comportamento simulado |
+|---------|------------------------|
+| 07h–18h | Canteiro *aberto* |
+| 12h–13h | Situação `INTERVALO_ALMOCO` — parte da equipe ausente |
+| Antes das 08h | `ABERTURA` |
+| Após 17h | `ENCERRAMENTO` |
+| Fora do expediente | `FECHADO` — ninguém no local |
+
+Também simula temperatura, umidade, percentual de conclusão da obra e presença de funcionários conforme tipo e horário.
+
+---
+
+## 7. Menu do cliente
+
+O `CanteiroMenu` roda em loop até o usuário escolher **0 — Sair**.
+
+### Menu principal
 
 ```text
 1 - Canteiros     → status operacional em tempo real
@@ -326,41 +434,175 @@ O monitor é **independente** do banco PostgreSQL: usa dados de demonstração e
 0 - Sair
 ```
 
-## Como rodar
+### Submenus
+
+**Canteiros**
+- Listar canteiros cadastrados
+- Consultar status operacional (por ID)
+
+**Funcionários**
+- Engenheiros agrupados por canteiro (com indicação de presença)
+- Listar por tipo: engenheiros, pedreiros, serventes, mestres
+- Listar todos ou filtrar por canteiro
+
+**Materiais**
+- Estoque geral ou por canteiro
+- Alertas de estoque baixo/crítico
+
+**Finanças**
+- Resumo geral (com totais consolidados)
+- Finanças por canteiro
+- Obras com alerta orçamentário (≥ 80% do orçamento utilizado)
+
+**Compras**
+- Todas as compras
+- Por canteiro
+- Filtrar por status: pendente, aprovado, entregue
+
+---
+
+## 8. Threads e concorrência
+
+O servidor usa um **pool fixo de 4 threads** (`Executors.newFixedThreadPool(4)`) para atender múltiplas chamadas gRPC em paralelo:
+
+```java
+ExecutorService executor = Executors.newFixedThreadPool(4);
+server = Grpc.newServerBuilderForPort(port, InsecureServerCredentials.create())
+    .executor(executor)
+    .addService(new CanteiroServiceImpl())
+    .build()
+    .start();
+```
+
+Cada RPC é independente (sem estado de sessão no servidor). O repositório em memória é compartilhado e somente leitura após a inicialização.
+
+---
+
+## 9. Demonstração — como rodar
+
+**Pré-requisito:** JDK 8 ou superior instalado.
 
 ```powershell
 cd monitor-grpc
 .\gradlew.bat installDist
+```
 
-# Terminal 1 — servidor
+> No Windows, use `.\gradlew.bat` (não `./gradlew`). O comando `installDist` gera os scripts em `build/install/monitor-grpc/bin/`.
+
+**Terminal 1 — servidor**
+
+```powershell
 .\build\install\monitor-grpc\bin\canteiro-server.bat
+```
 
-# Terminal 2 — cliente
+Saída esperada:
+
+```text
+INFO: Servidor de canteiros ativo na porta 50052
+INFO: Dados em memoria - canteiros, equipe, materiais, financas e compras.
+```
+
+**Terminal 2 — cliente**
+
+```powershell
 .\build\install\monitor-grpc\bin\canteiro-client.bat
 ```
 
-## Principais arquivos
+Para apontar a outro host:
 
-| Arquivo | Função |
-|---------|--------|
-| `monitor-grpc/src/main/proto/canteiro.proto` | Contrato gRPC |
-| `CanteiroServer.java` | Servidor na porta 50052 |
-| `CanteiroClient.java` | Entrada do cliente |
-| `CanteiroMenu.java` | Menus interativos |
-| `CanteiroRepository.java` | Dados em memória |
+```powershell
+.\build\install\monitor-grpc\bin\canteiro-client.bat 192.168.1.10:50052
+```
 
-## Serviços gRPC
+> Libere a porta **50052** no firewall se for testar entre máquinas diferentes na rede local.
 
-| RPC | Descrição |
-|-----|-----------|
-| `ListCanteiros` | Canteiros cadastrados |
-| `GetStatus` | Status operacional em tempo real |
-| `ListFuncionarios` | Equipe por tipo e canteiro |
-| `ListMateriais` | Estoque de materiais |
-| `ListFinancas` | Orçamento e gastos por obra |
-| `ListCompras` | Pedidos de compra |
+**Recompilar após alterações no código ou no `.proto`:**
 
-Mais detalhes em [monitor-grpc/README.md](monitor-grpc/README.md).
+```powershell
+.\gradlew.bat clean installDist
+```
+
+---
+
+## 10. Fluxo da comunicação
+
+```mermaid
+sequenceDiagram
+    participant U as Usuario
+    participant C as CanteiroClient
+    participant S as CanteiroServer
+    participant R as CanteiroRepository
+
+    U->>C: Escolhe opcao no menu
+    C->>S: RPC (ex.: GetStatus, canteiro_id=3)
+    S->>R: montarStatus(3, agora)
+    R-->>S: StatusReply (Protobuf)
+    S-->>C: Resposta gRPC
+    C-->>U: Painel formatado no terminal
+```
+
+| # | Etapa |
+|---|-------|
+| 1 | Servidor sobe na porta 50052 e aguarda chamadas |
+| 2 | Cliente conecta via `ManagedChannel` (localhost:50052) |
+| 3 | Usuário navega pelo `CanteiroMenu` |
+| 4 | Cada opção dispara um RPC com parâmetros (ID, filtros) |
+| 5 | Servidor delega ao `CanteiroRepository` e devolve Protobuf |
+| 6 | Cliente formata e exibe no terminal |
+| 7 | Opção 0 encerra o cliente; Ctrl+C encerra o servidor |
+
+---
+
+## 11. Código principal — gRPC
+
+**Cliente — abre o canal e inicia o menu** (`CanteiroClient.java`):
+
+```java
+ManagedChannel channel = Grpc.newChannelBuilder(target, InsecureChannelCredentials.create()).build();
+try (Scanner scanner = new Scanner(System.in)) {
+  CanteiroMenu menu = new CanteiroMenu(CanteiroServiceGrpc.newBlockingStub(channel), scanner);
+  menu.executar();
+} finally {
+  channel.shutdownNow().awaitTermination(5, TimeUnit.SECONDS);
+}
+```
+
+O `newBlockingStub` gera um proxy tipado a partir do `.proto` — cada chamada como `stub.getStatus(...)` já retorna o objeto `StatusReply`.
+
+**Servidor — implementação de um RPC** (`CanteiroServer.java`):
+
+```java
+@Override
+public void getStatus(StatusRequest request, StreamObserver<StatusReply> responseObserver) {
+  responseObserver.onNext(repository.montarStatus(request.getCanteiroId(), LocalDateTime.now()));
+  responseObserver.onCompleted();
+}
+```
+
+O padrão gRPC assíncrono usa `StreamObserver`: envia a resposta com `onNext`, sinaliza fim com `onCompleted`.
+
+**Cliente — chamada a partir do menu** (`CanteiroMenu.java`):
+
+```java
+StatusReply status = stub.getStatus(StatusRequest.newBuilder()
+    .setCanteiroId(canteiroId)
+    .build());
+```
+
+---
+
+## 12. Principais classes
+
+| Classe | Função |
+|--------|--------|
+| `canteiro.proto` | Contrato gRPC — serviço, mensagens e campos |
+| `CanteiroServer` | Sobe o servidor, registra `CanteiroServiceImpl` |
+| `CanteiroServiceImpl` | Implementa os 6 RPCs delegando ao repositório |
+| `CanteiroClient` | Conecta ao servidor e abre o menu interativo |
+| `CanteiroMenu` | Menus e formatação das respostas no terminal |
+| `CanteiroRepository` | Dados em memória e lógica de simulação (horário, estoque, finanças) |
+
+Documentação adicional do módulo: [monitor-grpc/README.md](monitor-grpc/README.md).
 
 ---
 
