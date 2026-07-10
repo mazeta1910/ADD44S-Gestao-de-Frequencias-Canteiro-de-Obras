@@ -463,18 +463,7 @@ O `CanteiroMenu` roda em loop até o usuário escolher **0 — Sair**.
 
 ## 8. Threads e concorrência
 
-O servidor usa um **pool fixo de 4 threads** (`Executors.newFixedThreadPool(4)`) para atender múltiplas chamadas gRPC em paralelo:
-
-```java
-ExecutorService executor = Executors.newFixedThreadPool(4);
-server = Grpc.newServerBuilderForPort(port, InsecureServerCredentials.create())
-    .executor(executor)
-    .addService(new CanteiroServiceImpl())
-    .build()
-    .start();
-```
-
-Cada RPC é independente (sem estado de sessão no servidor). O repositório em memória é compartilhado e somente leitura após a inicialização.
+O servidor usa um **pool fixo de 4 threads** (`Executors.newFixedThreadPool(4)`) para atender múltiplas chamadas gRPC em paralelo.
 
 ---
 
